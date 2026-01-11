@@ -46,15 +46,30 @@ function clearLogs() {
   notifyListeners();
 }
 
-// Intercept fetch
+// Intercept fetch (dev only)
+const isDev = import.meta.env.DEV;
 const originalFetch = window.fetch;
-window.fetch = async function (input, init) {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  
-  // Only log API calls
-  if (!url.includes("/api/")) {
-    return originalFetch.apply(this, [input, init]);
-  }
+
+// Avoid patching multiple times during HMR
+const globalAny = window as unknown as { __gatehouseFetchPatched?: boolean };
+if (isDev && !globalAny.__gatehouseFetchPatched) {
+  globalAny.__gatehouseFetchPatched = true;
+
+  window.fetch = async function (input, init) {
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+    // Log calls that look like our backend API (support both absolute + relative base URLs)
+    const shouldLog =
+      url.includes("/api/") ||
+      url.includes("/api/v1") ||
+      url.includes("/auth/") ||
+      url.includes("/users/") ||
+      url.includes("/org/");
+
+    if (!shouldLog) {
+      return originalFetch.apply(this, [input, init]);
+    }
 
   const id = crypto.randomUUID();
   const method = init?.method || "GET";
@@ -133,6 +148,7 @@ window.fetch = async function (input, init) {
     throw err;
   }
 };
+}
 
 // Check if we're in development mode
 const isDev = import.meta.env.DEV;
