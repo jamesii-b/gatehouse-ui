@@ -25,9 +25,16 @@ export default function LoginPage() {
     try {
       await login(email, password, rememberMe);
     } catch (error) {
+      // Log to console in dev mode for easier debugging
+      if (import.meta.env.DEV) {
+        console.error("[Gatehouse] Login failed:", error);
+      }
+
       const message = error instanceof ApiError 
         ? error.message 
-        : "An unexpected error occurred";
+        : import.meta.env.DEV && error instanceof Error
+          ? error.message
+          : "An unexpected error occurred";
       
       toast({
         variant: "destructive",

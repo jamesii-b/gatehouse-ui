@@ -147,12 +147,10 @@ if (isDev && !globalAny.__gatehouseFetchPatched) {
     });
     throw err;
   }
-};
+  };
 }
 
-// Check if we're in development mode
-const isDev = import.meta.env.DEV;
-
+// isDev is already declared at module level for the fetch patch
 export default function ApiDevTools() {
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<ApiLog[]>([...apiLogs]);
