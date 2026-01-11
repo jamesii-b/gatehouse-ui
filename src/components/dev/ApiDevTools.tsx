@@ -134,12 +134,17 @@ window.fetch = async function (input, init) {
   }
 };
 
+// Check if we're in development mode
+const isDev = import.meta.env.DEV;
+
 export default function ApiDevTools() {
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<ApiLog[]>([...apiLogs]);
   const [selectedLog, setSelectedLog] = useState<ApiLog | null>(null);
 
   useEffect(() => {
+    if (!isDev) return;
+    
     const update = () => setLogs([...apiLogs]);
     listeners.add(update);
     return () => {
@@ -153,6 +158,11 @@ export default function ApiDevTools() {
     if (status >= 400) return "destructive";
     return "secondary";
   };
+
+  // Don't render in production
+  if (!isDev) {
+    return null;
+  }
 
   if (!isOpen) {
     return (
