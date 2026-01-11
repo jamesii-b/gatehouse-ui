@@ -1,15 +1,27 @@
 import { useState } from "react";
-import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle } from "lucide-react";
+import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
+import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
+import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SecurityPage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showAddPasskey, setShowAddPasskey] = useState(false);
+  
+  // Password form state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  
+  const { toast } = useToast();
 
   // Mock security data
   const security = {
@@ -25,6 +37,68 @@ export default function SecurityPage() {
       passkeysRequired: false,
       minPasswordLength: 12,
     },
+  };
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError(null);
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordError(null);
+
+    // Client-side validation
+    if (!currentPassword) {
+      setPasswordError("Current password is required");
+      return;
+    }
+
+    if (!isPasswordValid(newPassword)) {
+      setPasswordError("New password does not meet strength requirements");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      await api.users.changePassword(currentPassword, newPassword, confirmPassword);
+      
+      toast({
+        title: "Password updated",
+        description: "Your password has been changed successfully.",
+      });
+      
+      resetPasswordForm();
+      setShowPasswordForm(false);
+    } catch (err) {
+      console.error("Password change failed:", err);
+      
+      if (err instanceof ApiError) {
+        if (err.type === "INVALID_CREDENTIALS" || err.code === 401) {
+          setPasswordError("Current password is incorrect");
+        } else if (err.type === "VALIDATION_ERROR") {
+          setPasswordError(err.message);
+        } else {
+          setPasswordError(err.message);
+        }
+      } else {
+        setPasswordError("An unexpected error occurred. Please try again.");
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleCancelPasswordChange = () => {
+    resetPasswordForm();
+    setShowPasswordForm(false);
   };
 
   return (
@@ -74,24 +148,58 @@ export default function SecurityPage() {
           </CardHeader>
           {showPasswordForm && (
             <CardContent className="space-y-4 border-t pt-4">
+              {passwordError && (
+                <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
+                  {passwordError}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">Current password</Label>
-                <Input id="currentPassword" type="password" />
+                <Input
+                  id="currentPassword"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="newPassword">New password</Label>
-                <Input id="newPassword" type="password" />
-                <p className="text-xs text-muted-foreground">
-                  Minimum {security.policyRequirements.minPasswordLength} characters required by organization
-                </p>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                />
+                <PasswordStrengthMeter password={newPassword} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm new password</Label>
-                <Input id="confirmPassword" type="password" />
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                />
+                {confirmPassword && newPassword !== confirmPassword && (
+                  <p className="text-xs text-destructive">Passwords do not match</p>
+                )}
               </div>
               <div className="flex gap-2">
-                <Button>Update password</Button>
-                <Button variant="outline" onClick={() => setShowPasswordForm(false)}>
+                <Button 
+                  onClick={handlePasswordChange} 
+                  disabled={isChangingPassword || !isPasswordValid(newPassword) || newPassword !== confirmPassword}
+                >
+                  {isChangingPassword && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Update password
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleCancelPasswordChange}
+                  disabled={isChangingPassword}
+                >
                   Cancel
                 </Button>
               </div>
