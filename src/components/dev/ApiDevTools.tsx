@@ -46,6 +46,20 @@ function clearLogs() {
   notifyListeners();
 }
 
+// Fallback UUID generator for environments where crypto.randomUUID is unavailable
+function generateUUID(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // Fallback implementation
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+}
+
 // Intercept fetch (dev only)
 const isDev = import.meta.env.DEV;
 const originalFetch = window.fetch;
@@ -55,23 +69,24 @@ const globalAny = window as unknown as { __gatehouseFetchPatched?: boolean };
 if (isDev && !globalAny.__gatehouseFetchPatched) {
   globalAny.__gatehouseFetchPatched = true;
 
-  window.fetch = async function (input, init) {
-    const url =
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  try {
+    window.fetch = async function (input, init) {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-    // Log calls that look like our backend API (support both absolute + relative base URLs)
-    const shouldLog =
-      url.includes("/api/") ||
-      url.includes("/api/v1") ||
-      url.includes("/auth/") ||
-      url.includes("/users/") ||
-      url.includes("/org/");
+      // Log calls that look like our backend API (support both absolute + relative base URLs)
+      const shouldLog =
+        url.includes("/api/") ||
+        url.includes("/api/v1") ||
+        url.includes("/auth/") ||
+        url.includes("/users/") ||
+        url.includes("/org/");
 
-    if (!shouldLog) {
-      return originalFetch.apply(this, [input, init]);
-    }
+      if (!shouldLog) {
+        return originalFetch.apply(this, [input, init]);
+      }
 
-  const id = crypto.randomUUID();
+      const id = generateUUID();
   const method = init?.method || "GET";
   let requestBody: unknown;
 
@@ -147,10 +162,15 @@ if (isDev && !globalAny.__gatehouseFetchPatched) {
     });
     throw err;
   }
-  };
+    };
+  } catch (patchError) {
+    // Log any errors during fetch patching with full stack trace
+    console.error("[Gatehouse DevTools] Failed to patch fetch:", patchError);
+    if (patchError instanceof Error) {
+      console.error("[Gatehouse DevTools] Stack trace:", patchError.stack);
+    }
+  }
 }
-
-// isDev is already declared at module level for the fetch patch
 export default function ApiDevTools() {
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<ApiLog[]>([...apiLogs]);
