@@ -4,7 +4,7 @@
 export const config = {
   // API Configuration
   api: {
-    baseUrl: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8888/api/v1",
+    baseUrl: import.meta.env.VITE_API_BASE_URL || "http://192.168.64.7:8888/api/v1",
   },
 
   // App metadata
