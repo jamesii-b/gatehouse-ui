@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
+import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
+import { TotpRemoveDialog } from "@/components/security/TotpRemoveDialog";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 export default function SecurityPage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showAddPasskey, setShowAddPasskey] = useState(false);
+  const [showTotpEnrollment, setShowTotpEnrollment] = useState(false);
+  const [showTotpRemove, setShowTotpRemove] = useState(false);
   
   // Password form state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -21,12 +25,14 @@ export default function SecurityPage() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   
+  // TOTP state
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  
   const { toast } = useToast();
 
   // Mock security data
   const security = {
     passwordLastChanged: "3 months ago",
-    totpEnabled: true,
     passkeysCount: 2,
     passkeys: [
       { id: "1", name: "MacBook Pro Touch ID", lastUsed: "Today" },
@@ -228,21 +234,37 @@ export default function SecurityPage() {
                   Use an authenticator app for two-factor authentication
                 </CardDescription>
               </div>
-              {security.totpEnabled ? (
+              {totpEnabled ? (
                 <Badge className="bg-success/10 text-success border-0">
                   <CheckCircle className="w-3 h-3 mr-1" />
                   Enabled
                 </Badge>
               ) : (
-                <Button size="sm">Set up</Button>
+                <Button size="sm" onClick={() => setShowTotpEnrollment(true)}>
+                  Set up
+                </Button>
               )}
             </div>
           </CardHeader>
-          {security.totpEnabled && (
+          {totpEnabled && (
             <CardContent className="border-t pt-4">
-              <Button variant="outline" size="sm">
-                Reconfigure
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowTotpEnrollment(true)}
+                >
+                  Reconfigure
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setShowTotpRemove(true)}
+                >
+                  Remove
+                </Button>
+              </div>
             </CardContent>
           )}
         </Card>
@@ -302,6 +324,25 @@ export default function SecurityPage() {
           console.log("Passkey added:", passkey);
           setShowAddPasskey(false);
         }}
+      />
+
+      <TotpEnrollmentWizard
+        open={showTotpEnrollment}
+        onOpenChange={setShowTotpEnrollment}
+        onSuccess={() => {
+          setTotpEnabled(true);
+          setShowTotpEnrollment(false);
+        }}
+      />
+
+      <TotpRemoveDialog
+        open={showTotpRemove}
+        onOpenChange={setShowTotpRemove}
+        onSuccess={() => {
+          setTotpEnabled(false);
+          setShowTotpRemove(false);
+        }}
+        isRequired={security.policyRequirements.totpRequired}
       />
     </div>
   );
