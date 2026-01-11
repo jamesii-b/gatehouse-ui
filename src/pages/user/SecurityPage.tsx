@@ -55,6 +55,11 @@ export default function SecurityPage() {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      setPasswordError("New password must be different from current password");
+      return;
+    }
+
     if (!isPasswordValid(newPassword)) {
       setPasswordError("New password does not meet strength requirements");
       return;
