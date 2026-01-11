@@ -185,6 +185,16 @@ export const api = {
       }),
 
     organizations: () => request<OrganizationsResponse>('/users/me/organizations'),
+
+    changePassword: (currentPassword: string, newPassword: string, newPasswordConfirm: string) =>
+      request<{ message: string }>('/users/me/password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          new_password_confirm: newPasswordConfirm,
+        }),
+      }),
   },
 };
 
