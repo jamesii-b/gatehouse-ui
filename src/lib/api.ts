@@ -113,6 +113,8 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
     ...(options.headers as Record<string, string>),
   };
 
@@ -127,6 +129,7 @@ async function request<T>(
   const response = await fetch(`${config.api.baseUrl}${endpoint}`, {
     ...options,
     headers,
+    cache: 'no-store',
   });
 
   const json: ApiResponse<T> = await response.json();
