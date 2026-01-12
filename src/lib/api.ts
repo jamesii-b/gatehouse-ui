@@ -48,6 +48,26 @@ export interface LoginResponse {
   user: User;
   token: string;
   expires_at: string;
+  requires_totp?: boolean;
+}
+
+export interface TotpEnrollResponse {
+  secret: string;
+  provisioning_uri: string;
+  qr_code: string; // base64 PNG
+  backup_codes: string[];
+}
+
+export interface TotpStatusResponse {
+  totp_enabled: boolean;
+  verified_at: string | null;
+  backup_codes_remaining: number;
+}
+
+export interface TotpVerifyResponse {
+  user: User;
+  token: string;
+  expires_at: string;
 }
 
 export interface ProfileResponse {
@@ -197,6 +217,46 @@ export const api = {
           new_password: newPassword,
           new_password_confirm: newPasswordConfirm,
         }),
+      }),
+  },
+
+  totp: {
+    // Initiate TOTP enrollment - returns secret, QR code, and backup codes
+    enroll: () =>
+      request<TotpEnrollResponse>('/auth/totp/enroll', {
+        method: 'POST',
+      }),
+
+    // Verify TOTP enrollment with a code from authenticator app
+    verifyEnrollment: (code: string) =>
+      request<{ message: string }>('/auth/totp/verify-enrollment', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      }),
+
+    // Verify TOTP code during login (no auth required - uses session state)
+    verify: (code: string, isBackupCode = false) =>
+      request<TotpVerifyResponse>('/auth/totp/verify', {
+        method: 'POST',
+        body: JSON.stringify({ code, is_backup_code: isBackupCode }),
+      }, false),
+
+    // Get TOTP status
+    status: () =>
+      request<TotpStatusResponse>('/auth/totp/status'),
+
+    // Disable TOTP (requires password confirmation)
+    disable: (password: string) =>
+      request<{ message: string }>('/auth/totp/disable', {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      }),
+
+    // Regenerate backup codes (requires password confirmation)
+    regenerateBackupCodes: (password: string) =>
+      request<{ backup_codes: string[] }>('/auth/totp/regenerate-backup-codes', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
       }),
   },
 };

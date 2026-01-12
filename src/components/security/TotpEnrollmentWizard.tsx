@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Smartphone, Copy, CheckCircle, Loader2, AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { api, ApiError, TotpEnrollResponse } from "@/lib/api";
 
-type WizardStep = "setup" | "verify" | "backup-codes" | "success";
+type WizardStep = "loading" | "setup" | "verify" | "backup-codes" | "success";
 
 interface TotpEnrollmentWizardProps {
   open: boolean;
@@ -25,35 +26,56 @@ export function TotpEnrollmentWizard({
   onOpenChange,
   onSuccess,
 }: TotpEnrollmentWizardProps) {
-  const [step, setStep] = useState<WizardStep>("setup");
+  const [step, setStep] = useState<WizardStep>("loading");
   const [isLoading, setIsLoading] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedBackupCodes, setCopiedBackupCodes] = useState(false);
+  const [enrollmentData, setEnrollmentData] = useState<TotpEnrollResponse | null>(null);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Mock data - will be replaced with actual API calls
-  const mockSecret = "JBSWY3DPEHPK3PXP";
-  const mockQrCode = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=otpauth://totp/Gatehouse:user@example.com?secret=${mockSecret}&issuer=Gatehouse`;
-  const mockBackupCodes = [
-    "ABCD-1234-EFGH",
-    "IJKL-5678-MNOP",
-    "QRST-9012-UVWX",
-    "YZAB-3456-CDEF",
-    "GHIJ-7890-KLMN",
-    "OPQR-1234-STUV",
-    "WXYZ-5678-ABCD",
-    "EFGH-9012-IJKL",
-  ];
+  // Fetch enrollment data when dialog opens
+  useEffect(() => {
+    if (open) {
+      initiateEnrollment();
+    }
+  }, [open]);
+
+  const initiateEnrollment = async () => {
+    setStep("loading");
+    setEnrollError(null);
+    setEnrollmentData(null);
+
+    try {
+      const data = await api.totp.enroll();
+      setEnrollmentData(data);
+      setStep("setup");
+    } catch (err) {
+      console.error("TOTP enrollment initiation failed:", err);
+      if (err instanceof ApiError) {
+        if (err.code === 409) {
+          setEnrollError("TOTP is already enabled on this account. Please remove it first to reconfigure.");
+        } else {
+          setEnrollError(err.message);
+        }
+      } else {
+        setEnrollError("Failed to initiate TOTP enrollment. Please try again.");
+      }
+      setStep("setup"); // Show error state
+    }
+  };
 
   const resetWizard = () => {
-    setStep("setup");
+    setStep("loading");
     setVerificationCode("");
     setVerifyError(null);
     setCopiedSecret(false);
     setCopiedBackupCodes(false);
     setIsLoading(false);
+    setEnrollmentData(null);
+    setEnrollError(null);
   };
 
   const handleClose = (isOpen: boolean) => {
@@ -64,8 +86,9 @@ export function TotpEnrollmentWizard({
   };
 
   const handleCopySecret = async () => {
+    if (!enrollmentData) return;
     try {
-      await navigator.clipboard.writeText(mockSecret);
+      await navigator.clipboard.writeText(enrollmentData.secret);
       setCopiedSecret(true);
       setTimeout(() => setCopiedSecret(false), 2000);
     } catch (err) {
@@ -74,8 +97,9 @@ export function TotpEnrollmentWizard({
   };
 
   const handleCopyBackupCodes = async () => {
+    if (!enrollmentData) return;
     try {
-      await navigator.clipboard.writeText(mockBackupCodes.join("\n"));
+      await navigator.clipboard.writeText(enrollmentData.backup_codes.join("\n"));
       setCopiedBackupCodes(true);
       toast({
         title: "Backup codes copied",
@@ -97,20 +121,15 @@ export function TotpEnrollmentWizard({
     setVerifyError(null);
 
     try {
-      // TODO: Call actual API to verify TOTP code
-      // await api.users.verifyTotpEnrollment(verificationCode);
-      
-      // Mock verification - accept "123456" for testing
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      if (verificationCode === "123456") {
-        setStep("backup-codes");
-      } else {
-        setVerifyError("Invalid verification code. Please try again.");
-      }
+      await api.totp.verifyEnrollment(verificationCode);
+      setStep("backup-codes");
     } catch (err) {
       console.error("TOTP verification failed:", err);
-      setVerifyError("Verification failed. Please try again.");
+      if (err instanceof ApiError) {
+        setVerifyError(err.message || "Invalid verification code. Please try again.");
+      } else {
+        setVerifyError("Verification failed. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -137,13 +156,15 @@ export function TotpEnrollmentWizard({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Smartphone className="w-5 h-5" />
+            {step === "loading" && "Setting up..."}
             {step === "setup" && "Set up Authenticator App"}
             {step === "verify" && "Verify Setup"}
             {step === "backup-codes" && "Save Backup Codes"}
             {step === "success" && "Setup Complete"}
           </DialogTitle>
           <DialogDescription>
-            {step === "setup" && "Scan the QR code with your authenticator app"}
+            {step === "loading" && "Preparing your TOTP enrollment..."}
+            {step === "setup" && (enrollError ? "An error occurred" : "Scan the QR code with your authenticator app")}
             {step === "verify" && "Enter the code from your authenticator app"}
             {step === "backup-codes" && "Save these codes in a safe place"}
             {step === "success" && "Two-factor authentication is now enabled"}
@@ -151,11 +172,40 @@ export function TotpEnrollmentWizard({
         </DialogHeader>
 
         <div className="space-y-4">
-          {step === "setup" && (
+          {step === "loading" && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <p className="mt-2 text-sm text-muted-foreground">Preparing enrollment...</p>
+            </div>
+          )}
+
+          {step === "setup" && enrollError && (
+            <>
+              <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg">
+                <div className="flex gap-2 text-destructive">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium">Enrollment failed</p>
+                    <p className="text-destructive/80">{enrollError}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => handleClose(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={initiateEnrollment}>
+                  Try again
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === "setup" && !enrollError && enrollmentData && (
             <>
               <div className="flex justify-center p-4 bg-white rounded-lg">
                 <img
-                  src={mockQrCode}
+                  src={`data:image/png;base64,${enrollmentData.qr_code}`}
                   alt="TOTP QR Code"
                   className="w-48 h-48"
                 />
@@ -167,7 +217,7 @@ export function TotpEnrollmentWizard({
                 </Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 px-3 py-2 text-sm font-mono bg-muted rounded-md break-all">
-                    {mockSecret}
+                    {enrollmentData.secret}
                   </code>
                   <Button
                     variant="outline"
@@ -251,7 +301,7 @@ export function TotpEnrollmentWizard({
             </>
           )}
 
-          {step === "backup-codes" && (
+          {step === "backup-codes" && enrollmentData && (
             <>
               <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg">
                 <div className="flex gap-2 text-warning">
@@ -267,7 +317,7 @@ export function TotpEnrollmentWizard({
               </div>
 
               <div className="grid grid-cols-2 gap-2 p-4 bg-muted rounded-lg">
-                {mockBackupCodes.map((code, index) => (
+                {enrollmentData.backup_codes.map((code, index) => (
                   <code
                     key={index}
                     className="px-2 py-1 text-sm font-mono text-center bg-background rounded"
