@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
 import { TotpRemoveDialog } from "@/components/security/TotpRemoveDialog";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, TotpStatusResponse } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SecurityPage() {
@@ -27,8 +27,30 @@ export default function SecurityPage() {
   
   // TOTP state
   const [totpEnabled, setTotpEnabled] = useState(false);
+  const [totpStatus, setTotpStatus] = useState<TotpStatusResponse | null>(null);
+  const [isTotpStatusLoading, setIsTotpStatusLoading] = useState(true);
   
   const { toast } = useToast();
+
+  // Fetch TOTP status on mount
+  useEffect(() => {
+    fetchTotpStatus();
+  }, []);
+
+  const fetchTotpStatus = async () => {
+    setIsTotpStatusLoading(true);
+    try {
+      const status = await api.totp.status();
+      setTotpStatus(status);
+      setTotpEnabled(status.totp_enabled);
+    } catch (err) {
+      console.error("Failed to fetch TOTP status:", err);
+      // Don't show error toast - just assume TOTP is not enabled
+      setTotpEnabled(false);
+    } finally {
+      setIsTotpStatusLoading(false);
+    }
+  };
 
   // Mock security data
   const security = {
@@ -234,7 +256,9 @@ export default function SecurityPage() {
                   Use an authenticator app for two-factor authentication
                 </CardDescription>
               </div>
-              {totpEnabled ? (
+            {isTotpStatusLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              ) : totpEnabled ? (
                 <Badge className="bg-success/10 text-success border-0">
                   <CheckCircle className="w-3 h-3 mr-1" />
                   Enabled
@@ -332,6 +356,7 @@ export default function SecurityPage() {
         onSuccess={() => {
           setTotpEnabled(true);
           setShowTotpEnrollment(false);
+          fetchTotpStatus(); // Refresh status after enrollment
         }}
       />
 
@@ -340,6 +365,7 @@ export default function SecurityPage() {
         onOpenChange={setShowTotpRemove}
         onSuccess={() => {
           setTotpEnabled(false);
+          setTotpStatus(null);
           setShowTotpRemove(false);
         }}
         isRequired={security.policyRequirements.totpRequired}
