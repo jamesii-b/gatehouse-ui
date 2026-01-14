@@ -125,12 +125,32 @@ export const tokenManager = {
   },
 };
 
+// Error types that indicate the session/token is truly invalid
+const SESSION_INVALID_ERROR_TYPES = [
+  'INVALID_TOKEN',
+  'TOKEN_EXPIRED',
+  'SESSION_EXPIRED',
+  'AUTH_ERROR',
+  'UNAUTHORIZED',
+];
+
+interface RequestConfig {
+  // Controls token clearing on 401:
+  // - 'auto' (default): Clear only if error type indicates invalid session
+  // - true: Always clear token on 401
+  // - false: Never clear token on 401
+  clearTokenOn401?: boolean | 'auto';
+}
+
 // Central request function - all API calls go through here
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
-  requiresAuth = true
+  requiresAuth = true,
+  requestConfig: RequestConfig = {}
 ): Promise<T> {
+  const { clearTokenOn401 = 'auto' } = requestConfig;
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -155,15 +175,28 @@ async function request<T>(
   const json: ApiResponse<T> = await response.json();
 
   if (!json.success) {
-    // Clear token on 401 errors
+    const errorType = json.error?.type || 'UNKNOWN_ERROR';
+
+    // Handle 401 token clearing based on configuration
     if (json.code === 401) {
-      tokenManager.clearToken();
+      const shouldClearToken =
+        clearTokenOn401 === true ||
+        (clearTokenOn401 === 'auto' && SESSION_INVALID_ERROR_TYPES.includes(errorType));
+
+      if (shouldClearToken) {
+        tokenManager.clearToken();
+        if (import.meta.env.DEV) {
+          console.log(`[API] Token cleared on 401 (type: ${errorType}, endpoint: ${endpoint})`);
+        }
+      } else if (import.meta.env.DEV) {
+        console.log(`[API] 401 received but token preserved (type: ${errorType}, endpoint: ${endpoint})`);
+      }
     }
     
     throw new ApiError(
       json.message || 'An error occurred',
       json.code,
-      json.error?.type || 'UNKNOWN_ERROR',
+      errorType,
       json.error?.details || {}
     );
   }
@@ -199,7 +232,8 @@ export const api = {
   },
 
   users: {
-    me: () => request<ProfileResponse>('/users/me'),
+    // me() is the canonical session validity check - always clear token on 401
+    me: () => request<ProfileResponse>('/users/me', {}, true, { clearTokenOn401: true }),
 
     updateMe: (data: { full_name?: string; avatar_url?: string }) =>
       request<ProfileResponse>('/users/me', {
@@ -209,6 +243,7 @@ export const api = {
 
     organizations: () => request<OrganizationsResponse>('/users/me/organizations'),
 
+    // Password change can return 401 for wrong current password - don't clear token
     changePassword: (currentPassword: string, newPassword: string, newPasswordConfirm: string) =>
       request<{ message: string }>('/users/me/password', {
         method: 'POST',
@@ -217,7 +252,7 @@ export const api = {
           new_password: newPassword,
           new_password_confirm: newPasswordConfirm,
         }),
-      }),
+      }, true, { clearTokenOn401: false }),
   },
 
   totp: {
@@ -227,12 +262,12 @@ export const api = {
         method: 'POST',
       }),
 
-    // Verify TOTP enrollment with a code from authenticator app
+    // Verify TOTP enrollment - wrong code should not log user out
     verifyEnrollment: (code: string) =>
       request<{ message: string }>('/auth/totp/verify-enrollment', {
         method: 'POST',
         body: JSON.stringify({ code }),
-      }),
+      }, true, { clearTokenOn401: false }),
 
     // Verify TOTP code during login (no auth required - uses session state)
     verify: (code: string, isBackupCode = false) =>
@@ -245,19 +280,19 @@ export const api = {
     status: () =>
       request<TotpStatusResponse>('/auth/totp/status'),
 
-    // Disable TOTP (requires password confirmation)
+    // Disable TOTP - wrong password should not log user out
     disable: (password: string) =>
       request<{ message: string }>('/auth/totp/disable', {
         method: 'DELETE',
         body: JSON.stringify({ password }),
-      }),
+      }, true, { clearTokenOn401: false }),
 
-    // Regenerate backup codes (requires password confirmation)
+    // Regenerate backup codes - wrong password should not log user out
     regenerateBackupCodes: (password: string) =>
       request<{ backup_codes: string[] }>('/auth/totp/regenerate-backup-codes', {
         method: 'POST',
         body: JSON.stringify({ password }),
-      }),
+      }, true, { clearTokenOn401: false }),
   },
 };
 
