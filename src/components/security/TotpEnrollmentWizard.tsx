@@ -205,7 +205,7 @@ export function TotpEnrollmentWizard({
             <>
               <div className="flex justify-center p-4 bg-white rounded-lg">
                 <img
-                  src={`data:image/png;base64,${enrollmentData.qr_code}`}
+                  src={enrollmentData.qr_code.startsWith('data:') ? enrollmentData.qr_code : `data:image/png;base64,${enrollmentData.qr_code}`}
                   alt="TOTP QR Code"
                   className="w-48 h-48"
                 />
