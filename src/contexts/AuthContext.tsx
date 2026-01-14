@@ -2,11 +2,16 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { useNavigate } from 'react-router-dom';
 import { api, User, ApiError, tokenManager } from '@/lib/api';
 
+interface LoginResult {
+  requiresTotp: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
+  verifyTotp: (code: string, isBackupCode?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -53,8 +58,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
-  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
+  const login = useCallback(async (email: string, password: string, rememberMe = false): Promise<LoginResult> => {
     const response = await api.auth.login(email, password, rememberMe);
+    
+    // If TOTP is required, don't set user yet - wait for TOTP verification
+    if (response.requires_totp) {
+      return { requiresTotp: true };
+    }
+    
+    // Login complete, set user and navigate
+    if (response.user) {
+      setUser(response.user);
+      navigate('/profile');
+    }
+    return { requiresTotp: false };
+  }, [navigate]);
+
+  const verifyTotp = useCallback(async (code: string, isBackupCode = false) => {
+    const response = await api.totp.verify(code, isBackupCode);
     setUser(response.user);
     navigate('/profile');
   }, [navigate]);
@@ -75,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        verifyTotp,
         logout,
         refreshUser,
       }}

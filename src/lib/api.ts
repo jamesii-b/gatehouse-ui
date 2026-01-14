@@ -45,9 +45,9 @@ export interface OrganizationsResponse {
 }
 
 export interface LoginResponse {
-  user: User;
-  token: string;
-  expires_at: string;
+  user?: User;
+  token?: string;
+  expires_at?: string;
   requires_totp?: boolean;
 }
 
@@ -211,10 +211,13 @@ export const api = {
       const response = await request<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password, remember_me }),
+        credentials: 'include', // Required for TOTP session tracking
       }, false); // Login doesn't require auth
       
-      // Store token on successful login
-      tokenManager.setToken(response.token, response.expires_at);
+      // Only store token if login is complete (no TOTP required)
+      if (response.token && response.expires_at && !response.requires_totp) {
+        tokenManager.setToken(response.token, response.expires_at);
+      }
       
       return response;
     },
@@ -270,11 +273,20 @@ export const api = {
       }, true, { clearTokenOn401: false }),
 
     // Verify TOTP code during login (no auth required - uses session state)
-    verify: (code: string, isBackupCode = false) =>
-      request<TotpVerifyResponse>('/auth/totp/verify', {
+    verify: async (code: string, isBackupCode = false): Promise<TotpVerifyResponse> => {
+      const response = await request<TotpVerifyResponse>('/auth/totp/verify', {
         method: 'POST',
         body: JSON.stringify({ code, is_backup_code: isBackupCode }),
-      }, false),
+        credentials: 'include', // Required for TOTP session tracking
+      }, false);
+      
+      // Store token after successful TOTP verification
+      if (response.token && response.expires_at) {
+        tokenManager.setToken(response.token, response.expires_at);
+      }
+      
+      return response;
+    },
 
     // Get TOTP status
     status: () =>
