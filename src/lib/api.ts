@@ -74,6 +74,32 @@ export interface ProfileResponse {
   user: User;
 }
 
+// WebAuthn types
+export interface PasskeyCredential {
+  id: string;
+  name: string;
+  transports: string[];
+  device_type: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface WebAuthnStatusResponse {
+  webauthn_enabled: boolean;
+  credential_count: number;
+}
+
+export interface WebAuthnCredentialsResponse {
+  credentials: PasskeyCredential[];
+  count: number;
+}
+
+export interface WebAuthnLoginCompleteResponse {
+  user: User;
+  token: string;
+  expires_at: string;
+}
+
 class ApiError extends Error {
   code: number;
   type: string;
@@ -305,6 +331,93 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ password }),
       }, true, { clearTokenOn401: false }),
+  },
+
+  webauthn: {
+    // Get WebAuthn status
+    status: () =>
+      request<WebAuthnStatusResponse>('/auth/webauthn/status'),
+
+    // List all passkeys for current user
+    listCredentials: () =>
+      request<WebAuthnCredentialsResponse>('/auth/webauthn/credentials'),
+
+    // Begin passkey registration (returns raw WebAuthn options)
+    beginRegistration: async (): Promise<Record<string, unknown>> => {
+      const response = await fetch(`${config.api.baseUrl}/auth/webauthn/register/begin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokenManager.getToken()}`,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new ApiError(
+          error.message || 'Failed to begin registration',
+          error.code || response.status,
+          error.error?.type || 'WEBAUTHN_ERROR',
+          error.error?.details || {}
+        );
+      }
+      // Returns raw WebAuthn options (not wrapped in standard response)
+      return response.json();
+    },
+
+    // Complete passkey registration
+    completeRegistration: (credential: Record<string, unknown>, name?: string) =>
+      request<{ message: string; credential_id: string }>('/auth/webauthn/register/complete', {
+        method: 'POST',
+        body: JSON.stringify({ ...credential, name }),
+      }),
+
+    // Begin passkey login (returns raw WebAuthn options)
+    beginLogin: async (email: string): Promise<Record<string, unknown>> => {
+      const response = await fetch(`${config.api.baseUrl}/auth/webauthn/login/begin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new ApiError(
+          error.message || 'No passkeys found for this account',
+          error.code || response.status,
+          error.error?.type || 'WEBAUTHN_ERROR',
+          error.error?.details || {}
+        );
+      }
+      // Returns raw WebAuthn options (not wrapped in standard response)
+      return response.json();
+    },
+
+    // Complete passkey login
+    completeLogin: async (assertion: Record<string, unknown>): Promise<WebAuthnLoginCompleteResponse> => {
+      const response = await request<WebAuthnLoginCompleteResponse>('/auth/webauthn/login/complete', {
+        method: 'POST',
+        body: JSON.stringify(assertion),
+      }, false);
+      
+      // Store token after successful passkey login
+      if (response.token && response.expires_at) {
+        tokenManager.setToken(response.token, response.expires_at);
+      }
+      
+      return response;
+    },
+
+    // Rename a passkey
+    renameCredential: (credentialId: string, name: string) =>
+      request<{ message: string }>(`/auth/webauthn/credentials/${credentialId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }),
+
+    // Delete a passkey
+    deleteCredential: (credentialId: string) =>
+      request<{ message: string }>(`/auth/webauthn/credentials/${credentialId}`, {
+        method: 'DELETE',
+      }),
   },
 };
 

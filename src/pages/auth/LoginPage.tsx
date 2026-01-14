@@ -1,24 +1,31 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
-import { ApiError } from "@/lib/api";
+import { api, ApiError, tokenManager } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import {
+  isWebAuthnSupported,
+  createLoginAssertion,
+  formatLoginAssertion,
+  WebAuthnLoginOptions,
+} from "@/lib/webauthn";
 
-type LoginStep = 'credentials' | 'totp';
+type LoginStep = 'credentials' | 'totp' | 'passkey-email';
 
 export default function LoginPage() {
-  const { login, verifyTotp } = useAuth();
+  const { login, verifyTotp, refreshUser } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,6 +34,7 @@ export default function LoginPage() {
   const [step, setStep] = useState<LoginStep>('credentials');
   const [totpCode, setTotpCode] = useState("");
   const [useBackupCode, setUseBackupCode] = useState(false);
+  const [passkeyEmail, setPasskeyEmail] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,23 +107,163 @@ export default function LoginPage() {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    if (!isWebAuthnSupported()) {
+      toast({
+        variant: "destructive",
+        title: "Not supported",
+        description: "Passkeys are not supported in this browser.",
+      });
+      return;
+    }
+
+    // If we have an email from the form, use it directly
+    const emailToUse = email || passkeyEmail;
+    
+    if (!emailToUse) {
+      setStep('passkey-email');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Step 1: Get login options from server
+      const options = await api.webauthn.beginLogin(emailToUse) as unknown as WebAuthnLoginOptions;
+
+      // Step 2: Create assertion using browser WebAuthn API
+      const assertion = await createLoginAssertion(options);
+
+      // Step 3: Complete login with server
+      const formattedAssertion = formatLoginAssertion(assertion);
+      const result = await api.webauthn.completeLogin(formattedAssertion);
+
+      // Token is stored by completeLogin, refresh user and navigate
+      await refreshUser();
+      navigate('/profile');
+      
+      toast({
+        title: "Welcome back",
+        description: `Signed in as ${result.user.email}`,
+      });
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("[Gatehouse] Passkey login failed:", error);
+      }
+
+      let message = "Failed to sign in with passkey";
+      
+      if (error instanceof ApiError) {
+        message = error.message;
+      } else if (error instanceof DOMException) {
+        switch (error.name) {
+          case "NotAllowedError":
+            message = "Authentication was cancelled or timed out.";
+            break;
+          case "InvalidStateError":
+            message = "No passkey found for this account.";
+            break;
+          default:
+            message = error.message || message;
+        }
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      toast({
+        variant: "destructive",
+        title: "Passkey sign in failed",
+        description: message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasskeyEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passkeyEmail) return;
+    await handlePasskeyLogin();
+  };
+
   const handleBackToCredentials = () => {
     setStep('credentials');
     setTotpCode("");
     setUseBackupCode(false);
+    setPasskeyEmail("");
   };
 
   // Auto-submit when OTP is complete
   const handleOtpChange = (value: string) => {
     setTotpCode(value);
     if (value.length === 6 && !useBackupCode) {
-      // Small delay to allow the UI to update before submitting
       setTimeout(() => {
         const form = document.getElementById('totp-form') as HTMLFormElement;
         if (form) form.requestSubmit();
       }, 100);
     }
   };
+
+  // Passkey email entry step
+  if (step === 'passkey-email') {
+    return (
+      <div className="auth-card">
+        <div className="text-center mb-8">
+          <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <Fingerprint className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            Sign in with passkey
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Enter your email to continue with passkey authentication
+          </p>
+        </div>
+
+        <form onSubmit={handlePasskeyEmailSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="passkey-email">Email</Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="passkey-email"
+                type="email"
+                placeholder="you@example.com"
+                value={passkeyEmail}
+                onChange={(e) => setPasskeyEmail(e.target.value)}
+                className="pl-10"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <Button type="submit" className="w-full" disabled={isLoading || !passkeyEmail}>
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Authenticating...
+              </>
+            ) : (
+              <>
+                Continue
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
+          </Button>
+        </form>
+
+        <Button
+          variant="ghost"
+          className="w-full mt-4 text-muted-foreground"
+          onClick={handleBackToCredentials}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to sign in
+        </Button>
+      </div>
+    );
+  }
 
   // TOTP verification step
   if (step === 'totp') {
@@ -268,7 +416,10 @@ export default function LoginPage() {
 
         <Button type="submit" className="w-full" disabled={isLoading}>
           {isLoading ? (
-            "Signing in..."
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Signing in...
+            </>
           ) : (
             <>
               Sign in
@@ -287,7 +438,13 @@ export default function LoginPage() {
 
       {/* Alternative login methods */}
       <div className="space-y-3">
-        <Button variant="outline" className="w-full" type="button">
+        <Button 
+          variant="outline" 
+          className="w-full" 
+          type="button"
+          onClick={handlePasskeyLogin}
+          disabled={isLoading}
+        >
           <Fingerprint className="w-4 h-4 mr-2" />
           Sign in with Passkey
         </Button>
