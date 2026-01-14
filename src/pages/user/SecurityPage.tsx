@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2 } from "lucide-react";
+import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +9,18 @@ import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
 import { TotpRemoveDialog } from "@/components/security/TotpRemoveDialog";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
-import { api, ApiError, TotpStatusResponse } from "@/lib/api";
+import { api, ApiError, TotpStatusResponse, PasskeyCredential } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function SecurityPage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -29,12 +39,28 @@ export default function SecurityPage() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [totpStatus, setTotpStatus] = useState<TotpStatusResponse | null>(null);
   const [isTotpStatusLoading, setIsTotpStatusLoading] = useState(true);
+
+  // Passkey state
+  const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([]);
+  const [isPasskeysLoading, setIsPasskeysLoading] = useState(true);
+  const [editingPasskeyId, setEditingPasskeyId] = useState<string | null>(null);
+  const [editingPasskeyName, setEditingPasskeyName] = useState("");
+  const [deletingPasskey, setDeletingPasskey] = useState<PasskeyCredential | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const { toast } = useToast();
+
+  // Policy requirements (could come from org settings in future)
+  const policyRequirements = {
+    totpRequired: true,
+    passkeysRequired: false,
+    minPasswordLength: 12,
+  };
 
   // Fetch TOTP status on mount
   useEffect(() => {
     fetchTotpStatus();
+    fetchPasskeys();
   }, []);
 
   const fetchTotpStatus = async () => {
@@ -45,26 +71,23 @@ export default function SecurityPage() {
       setTotpEnabled(status.totp_enabled);
     } catch (err) {
       console.error("Failed to fetch TOTP status:", err);
-      // Don't show error toast - just assume TOTP is not enabled
       setTotpEnabled(false);
     } finally {
       setIsTotpStatusLoading(false);
     }
   };
 
-  // Mock security data
-  const security = {
-    passwordLastChanged: "3 months ago",
-    passkeysCount: 2,
-    passkeys: [
-      { id: "1", name: "MacBook Pro Touch ID", lastUsed: "Today" },
-      { id: "2", name: "iPhone Face ID", lastUsed: "Yesterday" },
-    ],
-    policyRequirements: {
-      totpRequired: true,
-      passkeysRequired: false,
-      minPasswordLength: 12,
-    },
+  const fetchPasskeys = async () => {
+    setIsPasskeysLoading(true);
+    try {
+      const response = await api.webauthn.listCredentials();
+      setPasskeys(response.credentials);
+    } catch (err) {
+      console.error("Failed to fetch passkeys:", err);
+      setPasskeys([]);
+    } finally {
+      setIsPasskeysLoading(false);
+    }
   };
 
   const resetPasswordForm = () => {
@@ -77,7 +100,6 @@ export default function SecurityPage() {
   const handlePasswordChange = async () => {
     setPasswordError(null);
 
-    // Client-side validation
     if (!currentPassword) {
       setPasswordError("Current password is required");
       return;
@@ -134,6 +156,69 @@ export default function SecurityPage() {
     setShowPasswordForm(false);
   };
 
+  const handleRenamePasskey = async (passkey: PasskeyCredential) => {
+    if (!editingPasskeyName.trim() || editingPasskeyName === passkey.name) {
+      setEditingPasskeyId(null);
+      return;
+    }
+
+    try {
+      await api.webauthn.renameCredential(passkey.id, editingPasskeyName.trim());
+      setPasskeys(passkeys.map(p => 
+        p.id === passkey.id ? { ...p, name: editingPasskeyName.trim() } : p
+      ));
+      toast({
+        title: "Passkey renamed",
+        description: `Passkey renamed to "${editingPasskeyName.trim()}"`,
+      });
+    } catch (err) {
+      console.error("Failed to rename passkey:", err);
+      toast({
+        variant: "destructive",
+        title: "Failed to rename passkey",
+        description: err instanceof ApiError ? err.message : "An error occurred",
+      });
+    } finally {
+      setEditingPasskeyId(null);
+      setEditingPasskeyName("");
+    }
+  };
+
+  const handleDeletePasskey = async () => {
+    if (!deletingPasskey) return;
+
+    setIsDeleting(true);
+    try {
+      await api.webauthn.deleteCredential(deletingPasskey.id);
+      setPasskeys(passkeys.filter(p => p.id !== deletingPasskey.id));
+      toast({
+        title: "Passkey removed",
+        description: `"${deletingPasskey.name}" has been removed.`,
+      });
+    } catch (err) {
+      console.error("Failed to delete passkey:", err);
+      toast({
+        variant: "destructive",
+        title: "Failed to remove passkey",
+        description: err instanceof ApiError ? err.message : "An error occurred",
+      });
+    } finally {
+      setIsDeleting(false);
+      setDeletingPasskey(null);
+    }
+  };
+
+  const formatLastUsed = (date: string | null) => {
+    if (!date) return "Never";
+    const d = new Date(date);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return d.toLocaleDateString();
+  };
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -168,7 +253,7 @@ export default function SecurityPage() {
                   <Lock className="w-4 h-4" />
                   Password
                 </CardTitle>
-                <CardDescription>Last changed {security.passwordLastChanged}</CardDescription>
+                <CardDescription>Manage your account password</CardDescription>
               </div>
               <Button
                 variant="outline"
@@ -248,7 +333,7 @@ export default function SecurityPage() {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Smartphone className="w-4 h-4" />
                   Authenticator App (TOTP)
-                  {security.policyRequirements.totpRequired && (
+                  {policyRequirements.totpRequired && (
                     <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
                   )}
                 </CardTitle>
@@ -301,7 +386,7 @@ export default function SecurityPage() {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Fingerprint className="w-4 h-4" />
                   Passkeys
-                  {security.policyRequirements.passkeysRequired && (
+                  {policyRequirements.passkeysRequired && (
                     <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
                   )}
                 </CardTitle>
@@ -316,27 +401,73 @@ export default function SecurityPage() {
             </div>
           </CardHeader>
           <CardContent className="border-t pt-4">
-            <div className="space-y-3">
-              {security.passkeys.map((passkey) => (
-                <div
-                  key={passkey.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center">
-                      <Fingerprint className="w-4 h-4 text-primary" />
+            {isPasskeysLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : passkeys.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Fingerprint className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No passkeys registered</p>
+                <p className="text-xs mt-1">Add a passkey to enable passwordless sign-in</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {passkeys.map((passkey) => (
+                  <div
+                    key={passkey.id}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Fingerprint className="w-4 h-4 text-primary" />
+                      </div>
+                      {editingPasskeyId === passkey.id ? (
+                        <Input
+                          value={editingPasskeyName}
+                          onChange={(e) => setEditingPasskeyName(e.target.value)}
+                          onBlur={() => handleRenamePasskey(passkey)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenamePasskey(passkey);
+                            if (e.key === "Escape") setEditingPasskeyId(null);
+                          }}
+                          className="h-8 max-w-[200px]"
+                          autoFocus
+                        />
+                      ) : (
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{passkey.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Last used: {formatLastUsed(passkey.last_used_at)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{passkey.name}</p>
-                      <p className="text-xs text-muted-foreground">Last used: {passkey.lastUsed}</p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setEditingPasskeyId(passkey.id);
+                          setEditingPasskeyName(passkey.name);
+                        }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => setDeletingPasskey(passkey)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                    Remove
-                  </Button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -344,9 +475,9 @@ export default function SecurityPage() {
       <AddPasskeyWizard
         open={showAddPasskey}
         onOpenChange={setShowAddPasskey}
-        onSuccess={(passkey) => {
-          console.log("Passkey added:", passkey);
+        onSuccess={() => {
           setShowAddPasskey(false);
+          fetchPasskeys();
         }}
       />
 
@@ -356,7 +487,7 @@ export default function SecurityPage() {
         onSuccess={() => {
           setTotpEnabled(true);
           setShowTotpEnrollment(false);
-          fetchTotpStatus(); // Refresh status after enrollment
+          fetchTotpStatus();
         }}
       />
 
@@ -368,8 +499,31 @@ export default function SecurityPage() {
           setTotpStatus(null);
           setShowTotpRemove(false);
         }}
-        isRequired={security.policyRequirements.totpRequired}
+        isRequired={policyRequirements.totpRequired}
       />
+
+      {/* Delete Passkey Confirmation */}
+      <AlertDialog open={!!deletingPasskey} onOpenChange={() => setDeletingPasskey(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove passkey?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove "{deletingPasskey?.name}"? You will no longer be able to use this passkey to sign in.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePasskey}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

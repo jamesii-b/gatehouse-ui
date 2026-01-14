@@ -10,6 +10,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api, ApiError } from "@/lib/api";
+import {
+  isWebAuthnSupported,
+  createRegistrationCredential,
+  formatRegistrationCredential,
+  WebAuthnRegistrationOptions,
+} from "@/lib/webauthn";
 
 interface AddPasskeyWizardProps {
   open: boolean;
@@ -23,28 +30,61 @@ export function AddPasskeyWizard({ open, onOpenChange, onSuccess }: AddPasskeyWi
   const [step, setStep] = useState<WizardStep>("name");
   const [passkeyName, setPasskeyName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [credentialId, setCredentialId] = useState<string | null>(null);
 
   const handleStartRegistration = async () => {
     if (!passkeyName.trim()) return;
-    
+
+    if (!isWebAuthnSupported()) {
+      setError("WebAuthn is not supported in this browser. Please use a modern browser.");
+      setStep("error");
+      return;
+    }
+
     setStep("registering");
     setError(null);
 
     try {
-      // Simulate WebAuthn registration flow
-      // In production, this would call the backend to get challenge options,
-      // then call navigator.credentials.create()
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      // Simulate success
+      // Step 1: Get registration options from server
+      const options = await api.webauthn.beginRegistration() as unknown as WebAuthnRegistrationOptions;
+
+      // Step 2: Create credential using browser WebAuthn API
+      const credential = await createRegistrationCredential(options);
+
+      // Step 3: Format and send credential to server with name
+      const formattedCredential = formatRegistrationCredential(credential);
+      const result = await api.webauthn.completeRegistration(formattedCredential, passkeyName.trim());
+
+      setCredentialId(result.credential_id);
       setStep("success");
-      
+
       // Notify parent after a short delay
       setTimeout(() => {
-        onSuccess?.({ id: crypto.randomUUID(), name: passkeyName.trim() });
+        onSuccess?.({ id: result.credential_id, name: passkeyName.trim() });
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to register passkey");
+      console.error("Passkey registration failed:", err);
+      
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else if (err instanceof DOMException) {
+        // Handle WebAuthn-specific errors
+        switch (err.name) {
+          case "NotAllowedError":
+            setError("Registration was cancelled or timed out. Please try again.");
+            break;
+          case "InvalidStateError":
+            setError("This authenticator is already registered.");
+            break;
+          case "NotSupportedError":
+            setError("Your device doesn't support the required authentication method.");
+            break;
+          default:
+            setError(err.message || "Failed to register passkey");
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to register passkey");
+      }
       setStep("error");
     }
   };
@@ -56,6 +96,7 @@ export function AddPasskeyWizard({ open, onOpenChange, onSuccess }: AddPasskeyWi
       setStep("name");
       setPasskeyName("");
       setError(null);
+      setCredentialId(null);
     }, 200);
   };
 
