@@ -195,6 +195,7 @@ async function request<T>(
   const response = await fetch(`${config.api.baseUrl}${endpoint}`, {
     ...options,
     headers,
+    credentials: 'include', // Always include cookies for session consistency
     cache: 'no-store',
   });
 
