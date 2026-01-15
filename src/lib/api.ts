@@ -136,9 +136,13 @@ export const tokenManager = {
     return token;
   },
   
-  setToken: (token: string, expiresAt: string): void => {
+  setToken: (token: string, expiresAt?: string | null): void => {
     localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
+    if (expiresAt) {
+      localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
+    } else {
+      localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    }
   },
   
   clearToken: (): void => {
@@ -242,8 +246,8 @@ export const api = {
       }, false); // Login doesn't require auth
       
       // Only store token if login is complete (no TOTP required)
-      if (response.token && response.expires_at && !response.requires_totp) {
-        tokenManager.setToken(response.token, response.expires_at);
+      if (response.token && !response.requires_totp) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
       }
       
       return response;
@@ -307,9 +311,8 @@ export const api = {
         credentials: 'include', // Required for TOTP session tracking
       }, false);
       
-      // Store token after successful TOTP verification
-      if (response.token && response.expires_at) {
-        tokenManager.setToken(response.token, response.expires_at);
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
       }
       
       return response;
@@ -400,8 +403,8 @@ export const api = {
       }, false);
       
       // Store token after successful passkey login
-      if (response.token && response.expires_at) {
-        tokenManager.setToken(response.token, response.expires_at);
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
       }
       
       return response;
