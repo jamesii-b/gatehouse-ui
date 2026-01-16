@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, Organization, ApiError } from "@/lib/api";
+import { useOrganizations } from "@/hooks/useOrganizations";
 import { toast } from "@/hooks/use-toast";
 
 function ProfileSkeleton() {
@@ -73,8 +74,16 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [orgsLoading, setOrgsLoading] = useState(true);
+  
+  // Use React Query hook for organizations with automatic caching and deduplication
+  const { data: organizations = [], isLoading: orgsLoading, error: orgsError } = useOrganizations();
+
+  // Debug logging
+  console.log('[ProfilePage] organizations data:', organizations);
+  console.log('[ProfilePage] organizations is array:', Array.isArray(organizations));
+
+  // Ensure organizations is always an array (defensive check)
+  const organizationsArray = Array.isArray(organizations) ? organizations : [];
 
   // Sync local name state with user data
   useEffect(() => {
@@ -83,36 +92,16 @@ export default function ProfilePage() {
     }
   }, [user?.full_name]);
 
-  // Fetch organizations only when user is available
+  // Handle 403 errors for organizations
   useEffect(() => {
-    console.log('[ProfilePage] useEffect triggered, user:', user?.id);
-    if (!user) {
-      console.log('[ProfilePage] No user, skipping organizations fetch');
-      setOrgsLoading(false);
-      return;
+    if (orgsError instanceof ApiError && orgsError.code === 403) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to view organizations. Please contact your organization administrator.",
+        variant: "destructive",
+      });
     }
-
-    const fetchOrgs = async () => {
-      console.log('[ProfilePage] Making api.users.organizations() request');
-      try {
-        const response = await api.users.organizations();
-        console.log('[ProfilePage] Organizations fetched successfully:', response.organizations.length);
-        setOrganizations(response.organizations);
-      } catch (error) {
-        if (error instanceof ApiError) {
-          toast({
-            title: "Error loading organizations",
-            description: error.message,
-            variant: "destructive",
-          });
-        }
-      } finally {
-        setOrgsLoading(false);
-      }
-    };
-
-    fetchOrgs();
-  }, [user]);
+  }, [orgsError]);
 
   const getInitials = (fullName: string | null) => {
     if (!fullName) return "?";
@@ -271,13 +260,13 @@ export default function ProfilePage() {
                 <Skeleton className="h-14 w-full" />
                 <Skeleton className="h-14 w-full" />
               </div>
-            ) : organizations.length === 0 ? (
+            ) : organizationsArray.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">
                 You're not a member of any organizations yet.
               </p>
             ) : (
               <div className="space-y-2">
-                {organizations.map((org) => (
+                {organizationsArray.map((org) => (
                   <div
                     key={org.id}
                     className="flex items-center justify-between p-3 border rounded-lg"
@@ -297,7 +286,14 @@ export default function ProfilePage() {
                       )}
                       <span className="text-foreground font-medium">{org.name}</span>
                     </div>
-                    <Badge variant="secondary" className="capitalize">{org.role}</Badge>
+                    <div className="flex items-center gap-2">
+                      {(org.role === 'owner' || org.role === 'admin') && (
+                        <Badge variant="default" className="bg-primary text-primary-foreground">
+                          Admin
+                        </Badge>
+                      )}
+                      <Badge variant="secondary" className="capitalize">{org.role}</Badge>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -11,6 +11,8 @@ import { TotpRemoveDialog } from "@/components/security/TotpRemoveDialog";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
 import { api, ApiError, TotpStatusResponse, PasskeyCredential } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { ComplianceBanner } from "@/components/auth/ComplianceBanner";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +51,7 @@ export default function SecurityPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   
   const { toast } = useToast();
+  const { mfaCompliance } = useAuth();
 
   // Policy requirements (could come from org settings in future)
   const policyRequirements = {
@@ -227,6 +230,8 @@ export default function SecurityPage() {
           Manage your authentication methods and security settings
         </p>
       </div>
+
+      <ComplianceBanner compliance={mfaCompliance} />
 
       <div className="space-y-6">
         {/* Policy Status */}

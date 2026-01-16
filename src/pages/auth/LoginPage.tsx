@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2 } from "lucide-react";
+import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2, Smartphone, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError, tokenManager } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -20,8 +21,10 @@ import {
   formatLoginAssertion,
   WebAuthnLoginOptions,
 } from "@/lib/webauthn";
+import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
+import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
 
-type LoginStep = 'credentials' | 'totp' | 'passkey-email';
+type LoginStep = 'credentials' | 'totp' | 'passkey-email' | 'mfa-enrollment';
 
 export default function LoginPage() {
   const { login, verifyTotp, refreshUser } = useAuth();
@@ -45,8 +48,11 @@ export default function LoginPage() {
       if (result.requiresTotp) {
         setStep('totp');
         setTotpCode("");
+      } else if (result.requiresMfaEnrollment) {
+        // MFA enrollment required - will be handled by ProtectedLayout
+        // Navigation happens in AuthContext
       }
-      // If no TOTP required, navigation happens in AuthContext
+      // If no TOTP or MFA enrollment required, navigation happens in AuthContext
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] Login failed:", error);
@@ -203,6 +209,77 @@ export default function LoginPage() {
       }, 100);
     }
   };
+
+  // MFA enrollment step - shows when user needs to configure MFA
+  if (step === 'mfa-enrollment') {
+    const [showTotpEnrollment, setShowTotpEnrollment] = useState(false);
+    const [showPasskeyEnrollment, setShowPasskeyEnrollment] = useState(false);
+
+    return (
+      <div className="auth-card">
+        <div className="text-center mb-8">
+          <div className="mx-auto w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center mb-4">
+            <AlertTriangle className="w-6 h-6 text-warning" />
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            MFA Enrollment Required
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Your account requires multi-factor authentication to access full features.
+          </p>
+        </div>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-base">Configure MFA</CardTitle>
+            <CardDescription>
+              Set up at least one authentication method to continue
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => setShowTotpEnrollment(true)}
+            >
+              <Smartphone className="w-4 h-4 mr-2" />
+              Set up Authenticator App
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => setShowPasskeyEnrollment(true)}
+            >
+              <Fingerprint className="w-4 h-4 mr-2" />
+              Add a Passkey
+            </Button>
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-sm text-muted-foreground">
+          After configuring MFA, you'll be redirected to your profile.
+        </p>
+
+        <TotpEnrollmentWizard
+          open={showTotpEnrollment}
+          onOpenChange={setShowTotpEnrollment}
+          onSuccess={() => {
+            setShowTotpEnrollment(false);
+            navigate('/profile');
+          }}
+        />
+
+        <AddPasskeyWizard
+          open={showPasskeyEnrollment}
+          onOpenChange={setShowPasskeyEnrollment}
+          onSuccess={() => {
+            setShowPasskeyEnrollment(false);
+            navigate('/profile');
+          }}
+        />
+      </div>
+    );
+  }
 
   // Passkey email entry step
   if (step === 'passkey-email') {

@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 // Layouts
 import PublicLayout from "@/components/layouts/PublicLayout";
-import AuthenticatedLayout from "@/components/layouts/AuthenticatedLayout";
+import ProtectedLayout from "@/components/layouts/ProtectedLayout";
 
 // Public pages
 import Index from "@/pages/Index";
@@ -29,13 +29,27 @@ import ActivityPage from "@/pages/user/ActivityPage";
 import OrgOverviewPage from "@/pages/org/OrgOverviewPage";
 import MembersPage from "@/pages/org/MembersPage";
 import PoliciesPage from "@/pages/org/PoliciesPage";
+import CompliancePage from "@/pages/org/CompliancePage";
 import OrgAuditPage from "@/pages/org/OrgAuditPage";
 import OIDCClientsPage from "@/pages/org/OIDCClientsPage";
 
 import NotFound from "@/pages/NotFound";
 import ApiDevTools from "@/components/dev/ApiDevTools";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        // Don't retry on 403 authorization errors
+        if (error && typeof error === 'object' && 'code' in error && error.code === 403) {
+          return false;
+        }
+        // Default retry behavior for other errors (max 3 retries)
+        return failureCount < 3;
+      },
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -71,8 +85,8 @@ function AppRoutes() {
           <Route path="/error" element={<OIDCErrorPage />} />
         </Route>
 
-        {/* Authenticated routes */}
-        <Route element={<AuthenticatedLayout />}>
+        {/* Protected routes - handles auth and MFA enforcement */}
+        <Route element={<ProtectedLayout />}>
           {/* User routes */}
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/security" element={<SecurityPage />} />
@@ -83,6 +97,7 @@ function AppRoutes() {
           <Route path="/org" element={<OrgOverviewPage />} />
           <Route path="/org/members" element={<MembersPage />} />
           <Route path="/org/policies" element={<PoliciesPage />} />
+          <Route path="/org/policies/compliance" element={<CompliancePage />} />
           <Route path="/org/audit" element={<OrgAuditPage />} />
           <Route path="/org/clients" element={<OIDCClientsPage />} />
         </Route>

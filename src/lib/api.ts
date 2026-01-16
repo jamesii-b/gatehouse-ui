@@ -44,11 +44,41 @@ export interface OrganizationsResponse {
   count: number;
 }
 
+export interface MfaComplianceOrgSummary {
+  organization_id: string;
+  organization_name: string;
+  status: string;
+  deadline_at: string | null;
+  effective_mode: string;
+  applied_at: string;
+}
+
+export interface MfaComplianceSummary {
+  overall_status: string;
+  missing_methods: string[];
+  deadline_at: string | null;
+  orgs: MfaComplianceOrgSummary[];
+}
+
+/**
+ * Check if MFA is required for the user based on their compliance status.
+ * This checks if any organization has an effective_mode that starts with "require_",
+ * which handles require_webauthn, require_totp, or any future MFA methods.
+ */
+export function isMfaRequired(compliance: MfaComplianceSummary | null): boolean {
+  if (!compliance || !compliance.orgs) return false;
+  return compliance.orgs.some(
+    org => org.effective_mode && org.effective_mode.startsWith('require_')
+  );
+}
+
 export interface LoginResponse {
   user?: User;
   token?: string;
   expires_at?: string;
   requires_totp?: boolean;
+  requires_mfa_enrollment?: boolean;
+  mfa_compliance?: MfaComplianceSummary;
 }
 
 export interface TotpEnrollResponse {
@@ -176,12 +206,16 @@ const SESSION_INVALID_ERROR_TYPES = [
   'UNAUTHORIZED',
 ];
 
+export const AUTHORIZATION_ERROR_TYPES = ['AUTHORIZATION_ERROR'] as const;
+
 interface RequestConfig {
   // Controls token clearing on 401:
   // - 'auto' (default): Clear only if error type indicates invalid session
   // - true: Always clear token on 401
   // - false: Never clear token on 401
   clearTokenOn401?: boolean | 'auto';
+  // Optional callback for handling 403 authorization errors
+  on403?: (error: ApiError) => void;
 }
 
 // Central request function - all API calls go through here
@@ -191,7 +225,7 @@ async function request<T>(
   requiresAuth = true,
   requestConfig: RequestConfig = {}
 ): Promise<T> {
-  const { clearTokenOn401 = 'auto' } = requestConfig;
+  const { clearTokenOn401 = 'auto', on403 } = requestConfig;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -237,6 +271,21 @@ async function request<T>(
       } else if (import.meta.env.DEV) {
         console.log(`[API] 401 received but token preserved (type: ${errorType}, endpoint: ${endpoint})`);
       }
+    }
+
+    // Handle 403 authorization errors
+    if (json.code === 403) {
+      const error = new ApiError(
+        json.message || 'Access denied',
+        json.code,
+        errorType,
+        json.error?.details || {}
+      );
+
+      if (on403) {
+        on403(error);
+      }
+      throw error;
     }
     
     throw new ApiError(
@@ -290,7 +339,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    organizations: () => request<OrganizationsResponse>('/users/me/organizations'),
+    organizations: (requestConfig?: RequestConfig) =>
+      request<OrganizationsResponse>('/users/me/organizations', {}, true, requestConfig),
 
     // Password change can return 401 for wrong current password - don't clear token
     changePassword: (currentPassword: string, newPassword: string, newPasswordConfirm: string) =>
@@ -454,6 +504,79 @@ export const api = {
         method: 'DELETE',
       }),
   },
+
+  policies: {
+    // Get organization security policy
+    getOrgPolicy: (orgId: string, requestConfig?: RequestConfig) =>
+      request<OrgPolicyResponse>(`/organizations/${orgId}/security-policy`, {}, true, requestConfig),
+
+    // Update organization security policy
+    updateOrgPolicy: (orgId: string, body: UpdateOrgPolicyDto, requestConfig?: RequestConfig) =>
+      request<OrgPolicyResponse>(`/organizations/${orgId}/security-policy`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }, true, requestConfig),
+
+    // List organization compliance (paginated)
+    listOrgCompliance: (orgId: string, params: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<OrgCompliancePage>(
+        `/organizations/${orgId}/mfa-compliance?${new URLSearchParams(params)}`,
+        {},
+        true,
+        requestConfig
+      ),
+
+    // Get current user's MFA compliance summary
+    getMyCompliance: () =>
+      request<MfaComplianceSummary>('/users/me/mfa-compliance'),
+  },
 };
 
+// Policy types
+export interface OrgPolicyResponse {
+  security_policy: {
+    organization_id: string;
+    mfa_policy_mode: string;
+    mfa_grace_period_days: number;
+    notify_days_before: number;
+    policy_version: number;
+  };
+}
+
+export interface UpdateOrgPolicyDto {
+  mfa_policy_mode: string;
+  mfa_grace_period_days: number;
+  notify_days_before: number;
+}
+
+export interface OrgCompliancePage {
+  members: OrgComplianceMember[];
+  count: number;
+  page: number;
+  page_size: number;
+}
+
+export interface OrgComplianceMember {
+  user_id: string;
+  user_email: string;
+  user_name: string;
+  status: string;
+  deadline_at: string | null;
+  compliant_at: string | null;
+  last_notified_at: string | null;
+}
+
 export { ApiError };
+
+// Reusable 403 error handler for API calls
+// Shows a user-friendly toast message when access is denied
+export function create403Handler(toastFn: (options: { title: string; description: string; variant: "destructive" }) => void) {
+  return (error: ApiError) => {
+    console.warn('[API] 403 Access Denied:', error.message);
+    toastFn({
+      title: "Access Denied",
+      description: "You don't have permission to view this section. Please contact your organization administrator.",
+      variant: "destructive",
+    });
+  };
+}
