@@ -59,15 +59,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string, rememberMe = false): Promise<LoginResult> => {
+    console.log('[AuthContext] login() called');
     const response = await api.auth.login(email, password, rememberMe);
+    console.log('[AuthContext] login response:', { requires_totp: response.requires_totp, hasToken: !!response.token, hasUser: !!response.user });
     
     // If TOTP is required, don't set user yet - wait for TOTP verification
     if (response.requires_totp) {
+      console.log('[AuthContext] TOTP required, returning early');
       return { requiresTotp: true };
     }
     
-    // Login complete, set user and navigate
+    // Login complete: store token explicitly before setting user state
+    // This ensures the token is available for any subsequent API calls
+    // (e.g., when navigate('/profile') triggers refreshUser())
+    if (response.token) {
+      console.log('[AuthContext] Storing token in localStorage');
+      tokenManager.setToken(response.token, response.expires_at ?? null);
+      console.log('[AuthContext] Token stored, verifying:', tokenManager.getToken()?.substring(0, 20) + '...');
+    }
+    
+    // Set user and navigate
     if (response.user) {
+      console.log('[AuthContext] Setting user state and navigating to /profile');
       setUser(response.user);
       navigate('/profile');
     }
@@ -76,6 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyTotp = useCallback(async (code: string, isBackupCode = false) => {
     const response = await api.totp.verify(code, isBackupCode);
+    
+    // Store token explicitly before setting user state
+    // This ensures the token is available for any subsequent API calls
+    if (response.token) {
+      tokenManager.setToken(response.token, response.expires_at ?? null);
+    }
+    
     setUser(response.user);
     navigate('/profile');
   }, [navigate]);

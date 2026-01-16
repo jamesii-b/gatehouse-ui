@@ -128,30 +128,42 @@ export const tokenManager = {
     if (token && expiry) {
       const expiryDate = new Date(expiry);
       if (expiryDate <= new Date()) {
+        console.log('[TokenManager] Token expired, clearing');
         tokenManager.clearToken();
         return null;
       }
+    }
+    
+    if (token) {
+      console.log('[TokenManager] Token retrieved:', token.substring(0, 20) + '...');
+    } else {
+      console.log('[TokenManager] No token found in localStorage');
     }
     
     return token;
   },
   
   setToken: (token: string, expiresAt?: string | null): void => {
+    console.log('[TokenManager] Setting token, expiresAt:', expiresAt);
     localStorage.setItem(TOKEN_KEY, token);
     if (expiresAt) {
       localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
     } else {
       localStorage.removeItem(TOKEN_EXPIRY_KEY);
     }
+    console.log('[TokenManager] Token set successfully');
   },
   
   clearToken: (): void => {
+    console.log('[TokenManager] Clearing token from localStorage');
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_EXPIRY_KEY);
   },
   
   hasValidToken: (): boolean => {
-    return tokenManager.getToken() !== null;
+    const hasToken = tokenManager.getToken() !== null;
+    console.log('[TokenManager] hasValidToken:', hasToken);
+    return hasToken;
   },
 };
 
@@ -193,6 +205,9 @@ async function request<T>(
     const token = tokenManager.getToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+      console.log('[API] Added Authorization header for endpoint:', endpoint);
+    } else {
+      console.log('[API] WARNING: No token available for authenticated endpoint:', endpoint);
     }
   }
 
@@ -380,6 +395,7 @@ export const api = {
       const response = await fetch(`${config.api.baseUrl}/auth/webauthn/login/begin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Required for session cookie
         body: JSON.stringify({ email }),
       });
       if (!response.ok) {
@@ -397,17 +413,32 @@ export const api = {
 
     // Complete passkey login
     completeLogin: async (assertion: Record<string, unknown>): Promise<WebAuthnLoginCompleteResponse> => {
-      const response = await request<WebAuthnLoginCompleteResponse>('/auth/webauthn/login/complete', {
+      const response = await fetch(`${config.api.baseUrl}/auth/webauthn/login/complete`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Required for session cookie
         body: JSON.stringify(assertion),
-      }, false);
+      });
       
-      // Store token after successful passkey login
-      if (response.token) {
-        tokenManager.setToken(response.token, response.expires_at ?? null);
+      const json: ApiResponse<WebAuthnLoginCompleteResponse> = await response.json();
+      
+      if (!json.success) {
+        throw new ApiError(
+          json.message || 'Authentication failed',
+          json.code,
+          json.error?.type || 'AUTHENTICATION_ERROR',
+          json.error?.details || {}
+        );
       }
       
-      return response;
+      // Store token after successful passkey login
+      if (json.data?.token) {
+        tokenManager.setToken(json.data.token, json.data.expires_at ?? null);
+      }
+      
+      return json.data as WebAuthnLoginCompleteResponse;
     },
 
     // Rename a passkey

@@ -24,25 +24,29 @@ export function TopBar() {
 
   useEffect(() => {
     async function fetchOrgs() {
+      console.log('[TopBar] fetchOrgs called, isAuthenticated:', isAuthenticated);
       if (!isAuthenticated) {
+        console.log('[TopBar] Not authenticated, skipping organizations fetch');
         setOrgsLoading(false);
         return;
       }
       
       try {
+        console.log('[TopBar] Making api.users.organizations() request');
         const response = await api.users.organizations();
+        console.log('[TopBar] Organizations fetched successfully:', response.organizations.length);
         setOrganizations(response.organizations);
         if (response.organizations.length > 0 && !currentOrg) {
           setCurrentOrg(response.organizations[0]);
         }
       } catch (error) {
-        console.error("Failed to fetch organizations:", error);
+        console.error("[TopBar] Failed to fetch organizations:", error);
       } finally {
         setOrgsLoading(false);
       }
     }
     fetchOrgs();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentOrg]);
 
   const handleLogout = () => {
     navigate("/login");

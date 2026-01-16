@@ -129,7 +129,7 @@ export default function LoginPage() {
 
     try {
       // Step 1: Get login options from server
-      const options = await api.webauthn.beginLogin(emailToUse) as unknown as WebAuthnLoginOptions;
+      const options = await api.webauthn.beginLogin(emailToUse) as WebAuthnLoginOptions;
 
       // Step 2: Create assertion using browser WebAuthn API
       const assertion = await createLoginAssertion(options);

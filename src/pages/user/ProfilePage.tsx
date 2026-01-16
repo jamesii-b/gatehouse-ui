@@ -85,14 +85,18 @@ export default function ProfilePage() {
 
   // Fetch organizations only when user is available
   useEffect(() => {
+    console.log('[ProfilePage] useEffect triggered, user:', user?.id);
     if (!user) {
+      console.log('[ProfilePage] No user, skipping organizations fetch');
       setOrgsLoading(false);
       return;
     }
 
     const fetchOrgs = async () => {
+      console.log('[ProfilePage] Making api.users.organizations() request');
       try {
         const response = await api.users.organizations();
+        console.log('[ProfilePage] Organizations fetched successfully:', response.organizations.length);
         setOrganizations(response.organizations);
       } catch (error) {
         if (error instanceof ApiError) {
