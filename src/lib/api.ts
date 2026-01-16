@@ -77,6 +77,7 @@ export interface LoginResponse {
   token?: string;
   expires_at?: string;
   requires_totp?: boolean;
+  requires_webauthn?: boolean;
   requires_mfa_enrollment?: boolean;
   mfa_compliance?: MfaComplianceSummary;
 }

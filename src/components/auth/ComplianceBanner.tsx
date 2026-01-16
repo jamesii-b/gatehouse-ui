@@ -55,6 +55,11 @@ export function ComplianceBanner({ compliance }: ComplianceBannerProps) {
   // Check if MFA is required based on effective_mode (if available)
   const mfaRequired = isMfaRequired(compliance);
 
+  // DEBUG: Log compliance data to diagnose the error
+  console.log('[ComplianceBanner] compliance:', compliance);
+  console.log('[ComplianceBanner] missing_methods:', compliance?.missing_methods);
+  console.log('[ComplianceBanner] missing_methods is array:', Array.isArray(compliance?.missing_methods));
+
   // Don't show if no compliance data or already compliant
   if (!compliance || compliance.overall_status === 'compliant' ||
       compliance.overall_status === 'not_applicable') {
@@ -64,7 +69,8 @@ export function ComplianceBanner({ compliance }: ComplianceBannerProps) {
   // Show banner if:
   // 1. MFA is required (effective_mode starts with "require_"), OR
   // 2. There are missing methods (fallback for older data without effective_mode)
-  if (!mfaRequired && compliance.missing_methods.length === 0) {
+  // Guard against missing_methods being undefined
+  if (!mfaRequired && (!compliance.missing_methods || compliance.missing_methods.length === 0)) {
     return null;
   }
 
@@ -80,7 +86,7 @@ export function ComplianceBanner({ compliance }: ComplianceBannerProps) {
               Your account requires MFA enrollment to access full features.
               Please configure MFA immediately to restore access.
             </p>
-            {compliance.missing_methods.length > 0 && (
+            {compliance.missing_methods?.length > 0 && (
               <p className="text-sm">
                 Required methods: {compliance.missing_methods.join(', ')}
               </p>
@@ -107,7 +113,7 @@ export function ComplianceBanner({ compliance }: ComplianceBannerProps) {
                 Time remaining: {countdown}
               </p>
             )}
-            {compliance.missing_methods.length > 0 && (
+            {compliance.missing_methods?.length > 0 && (
               <p className="text-sm">
                 Required methods: {compliance.missing_methods.join(', ')}
               </p>
@@ -129,7 +135,7 @@ export function ComplianceBanner({ compliance }: ComplianceBannerProps) {
             <p>
               Your organization has enabled MFA requirements. You have a grace period to configure your authentication methods.
             </p>
-            {compliance.missing_methods.length > 0 && (
+            {compliance.missing_methods?.length > 0 && (
               <p className="text-sm">
                 Required methods: {compliance.missing_methods.join(', ')}
               </p>

@@ -4,6 +4,7 @@ import { api, User, ApiError, tokenManager, MfaComplianceSummary } from '@/lib/a
 
 interface LoginResult {
   requiresTotp: boolean;
+  requiresWebAuthn: boolean;
   requiresMfaEnrollment?: boolean;
 }
 
@@ -15,6 +16,7 @@ interface AuthContextType {
   requiresMfaEnrollment: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
   verifyTotp: (code: string, isBackupCode?: boolean) => Promise<void>;
+  verifyWebAuthn: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   refreshCompliance: () => Promise<void>;
@@ -38,13 +40,39 @@ function persistMfaCompliance(compliance: MfaComplianceSummary | null): void {
 function loadMfaCompliance(): MfaComplianceSummary | null {
   try {
     const stored = localStorage.getItem(MFA_COMPLIANCE_KEY);
-    if (!stored) return null;
+    if (!stored) {
+      console.log('[AuthContext] loadMfaCompliance: no stored data');
+      return null;
+    }
     
-    const compliance = JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    console.log('[AuthContext] loadMfaCompliance: raw parsed:', parsed);
+    
+    // Handle both direct format and legacy double-nested format
+    // Legacy format: { mfa_compliance: { ... } }
+    // Current format: { ... }
+    let compliance: Record<string, unknown>;
+    if (parsed.mfa_compliance && typeof parsed.mfa_compliance === 'object') {
+      console.log('[AuthContext] loadMfaCompliance: detected legacy double-nested format, unwrapping');
+      compliance = parsed.mfa_compliance as Record<string, unknown>;
+    } else {
+      compliance = parsed;
+    }
     
     // Validate that the stored data has the required fields
-    if (!compliance || typeof compliance !== 'object') return null;
-    if (!Array.isArray(compliance.orgs)) return null;
+    if (!compliance || typeof compliance !== 'object') {
+      console.log('[AuthContext] loadMfaCompliance: invalid compliance object');
+      return null;
+    }
+    if (!Array.isArray(compliance.orgs)) {
+      console.log('[AuthContext] loadMfaCompliance: orgs is not an array');
+      return null;
+    }
+    
+    // Validate missing_methods exists and is an array
+    if (!Array.isArray(compliance.missing_methods)) {
+      console.log('[AuthContext] loadMfaCompliance: missing_methods is not an array or missing');
+    }
     
     // Check if at least one org has effective_mode (new field from API)
     // If not, treat as stale data and return null to fetch fresh data
@@ -53,11 +81,14 @@ function loadMfaCompliance(): MfaComplianceSummary | null {
     );
     
     if (!hasEffectiveMode) {
+      console.log('[AuthContext] loadMfaCompliance: no effective_mode found, treating as stale');
       return null;
     }
     
-    return compliance;
-  } catch {
+    console.log('[AuthContext] loadMfaCompliance: loaded successfully');
+    return compliance as unknown as MfaComplianceSummary;
+  } catch (error) {
+    console.log('[AuthContext] loadMfaCompliance: error loading:', error);
     return null;
   }
 }
@@ -144,17 +175,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string, rememberMe = false): Promise<LoginResult> => {
     console.log('[AuthContext] login() called');
     const response = await api.auth.login(email, password, rememberMe);
-    console.log('[AuthContext] login response:', { 
-      requires_totp: response.requires_totp, 
+    console.log('[AuthContext] login response:', {
+      requires_totp: response.requires_totp,
+      requires_webauthn: response.requires_webauthn,
       requires_mfa_enrollment: response.requires_mfa_enrollment,
-      hasToken: !!response.token, 
-      hasUser: !!response.user 
+      hasToken: !!response.token,
+      hasUser: !!response.user
     });
+    
+    // If WebAuthn is required, don't set user yet - wait for WebAuthn verification
+    if (response.requires_webauthn) {
+      console.log('[AuthContext] WebAuthn required, returning early');
+      return { requiresTotp: false, requiresWebAuthn: true };
+    }
     
     // If TOTP is required, don't set user yet - wait for TOTP verification
     if (response.requires_totp) {
       console.log('[AuthContext] TOTP required, returning early');
-      return { requiresTotp: true };
+      return { requiresTotp: true, requiresWebAuthn: false };
     }
     
     // If MFA enrollment is required (past deadline), set compliance state
@@ -171,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persistMfaCompliance(response.mfa_compliance);
       }
       setRequiresMfaEnrollment(true);
-      return { requiresTotp: false, requiresMfaEnrollment: true };
+      return { requiresTotp: false, requiresWebAuthn: false, requiresMfaEnrollment: true };
     }
     
     // Login complete: store token explicitly before setting user state
@@ -194,8 +232,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRequiresMfaEnrollment(false);
       navigate('/profile');
     }
-    return { requiresTotp: false };
+    return { requiresTotp: false, requiresWebAuthn: false };
   }, [navigate]);
+
+  const verifyWebAuthn = useCallback(async () => {
+    // WebAuthn verification is handled directly in the LoginPage component
+    // This is a placeholder for consistency with the interface
+    console.log('[AuthContext] verifyWebAuthn called - verification handled in LoginPage');
+  }, []);
 
   const verifyTotp = useCallback(async (code: string, isBackupCode = false) => {
     const response = await api.totp.verify(code, isBackupCode);
@@ -244,6 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         requiresMfaEnrollment,
         login,
         verifyTotp,
+        verifyWebAuthn,
         logout,
         refreshUser,
         refreshCompliance,

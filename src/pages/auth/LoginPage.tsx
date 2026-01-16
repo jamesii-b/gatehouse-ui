@@ -24,7 +24,7 @@ import {
 import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
 
-type LoginStep = 'credentials' | 'totp' | 'passkey-email' | 'mfa-enrollment';
+type LoginStep = 'credentials' | 'totp' | 'webauthn' | 'passkey-email' | 'mfa-enrollment';
 
 export default function LoginPage() {
   const { login, verifyTotp, refreshUser } = useAuth();
@@ -45,21 +45,23 @@ export default function LoginPage() {
 
     try {
       const result = await login(email, password, rememberMe);
-      if (result.requiresTotp) {
+      if (result.requiresWebAuthn) {
+        setStep('webauthn');
+      } else if (result.requiresTotp) {
         setStep('totp');
         setTotpCode("");
       } else if (result.requiresMfaEnrollment) {
         // MFA enrollment required - will be handled by ProtectedLayout
         // Navigation happens in AuthContext
       }
-      // If no TOTP or MFA enrollment required, navigation happens in AuthContext
+      // If no TOTP, WebAuthn, or MFA enrollment required, navigation happens in AuthContext
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] Login failed:", error);
       }
 
-      const message = error instanceof ApiError 
-        ? error.message 
+      const message = error instanceof ApiError
+        ? error.message
         : import.meta.env.DEV && error instanceof Error
           ? error.message
           : "An unexpected error occurred";
@@ -123,7 +125,7 @@ export default function LoginPage() {
       return;
     }
 
-    // If we have an email from the form, use it directly
+    // If we have an email from the credentials form or passkey-email step, use it
     const emailToUse = email || passkeyEmail;
     
     if (!emailToUse) {
@@ -179,6 +181,74 @@ export default function LoginPage() {
       toast({
         variant: "destructive",
         title: "Passkey sign in failed",
+        description: message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle WebAuthn verification specifically for the WebAuthn step (after login response)
+  const handleWebAuthnVerify = async () => {
+    // Use the email from the credentials form
+    if (!email) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Email is required. Please go back and try again.",
+      });
+      handleBackToCredentials();
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Step 1: Get login options from server
+      const options = await api.webauthn.beginLogin(email) as WebAuthnLoginOptions;
+
+      // Step 2: Create assertion using browser WebAuthn API
+      const assertion = await createLoginAssertion(options);
+
+      // Step 3: Complete login with server
+      const formattedAssertion = formatLoginAssertion(assertion);
+      const result = await api.webauthn.completeLogin(formattedAssertion);
+
+      // Token is stored by completeLogin, refresh user and navigate
+      await refreshUser();
+      navigate('/profile');
+      
+      toast({
+        title: "Welcome back",
+        description: `Signed in as ${result.user.email}`,
+      });
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("[Gatehouse] WebAuthn verification failed:", error);
+      }
+
+      let message = "Failed to verify passkey";
+      
+      if (error instanceof ApiError) {
+        message = error.message;
+      } else if (error instanceof DOMException) {
+        switch (error.name) {
+          case "NotAllowedError":
+            message = "Authentication was cancelled or timed out. Please try again or use your authenticator app.";
+            break;
+          case "InvalidStateError":
+            message = "No passkey found for this account.";
+            break;
+          default:
+            message = error.message || message;
+        }
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      toast({
+        variant: "destructive",
+        title: "Verification failed",
         description: message,
       });
     } finally {
@@ -412,6 +482,76 @@ export default function LoginPage() {
             onClick={() => setUseBackupCode(!useBackupCode)}
           >
             {useBackupCode ? "Use authenticator app" : "Use a backup code instead"}
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground"
+            onClick={handleBackToCredentials}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to sign in
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // WebAuthn verification step - shows when user has WebAuthn enrolled
+  if (step === 'webauthn') {
+    return (
+      <div className="auth-card">
+        <div className="text-center mb-8">
+          <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <Fingerprint className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            Passkey verification
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Use your passkey to complete sign in
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <Button
+            onClick={handleWebAuthnVerify}
+            disabled={isLoading}
+            className="w-full"
+            size="lg"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Authenticating...
+              </>
+            ) : (
+              <>
+                <Fingerprint className="w-5 h-5 mr-2" />
+                Use Passkey
+              </>
+            )}
+          </Button>
+
+          <div className="relative my-6">
+            <Separator />
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs text-muted-foreground">
+              or
+            </span>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStep('totp');
+              setTotpCode("");
+              setUseBackupCode(false);
+            }}
+            disabled={isLoading}
+            className="w-full"
+          >
+            <Smartphone className="w-4 h-4 mr-2" />
+            Use Authenticator App
           </Button>
 
           <Button
