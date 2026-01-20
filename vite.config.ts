@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(",") || ["ui.webauthn.local"],
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(",") || ["ui.webauthn.local","gatehouse-ui.hawkvelt.tech"],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

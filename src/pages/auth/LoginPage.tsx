@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2, Smartphone, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,13 +23,15 @@ import {
 } from "@/lib/webauthn";
 import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
+import { generateCodeVerifier, computeCodeChallenge, generateState, storeOAuthState, OAuthProvider } from "@/lib/oauth";
 
-type LoginStep = 'credentials' | 'totp' | 'webauthn' | 'passkey-email' | 'mfa-enrollment';
+type LoginStep = 'credentials' | 'totp' | 'webauthn' | 'passkey-email' | 'mfa-enrollment' | 'mfa';
 
 export default function LoginPage() {
   const { login, verifyTotp, refreshUser } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -38,6 +40,28 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [passkeyEmail, setPasskeyEmail] = useState("");
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+
+  // Check for MFA step from OAuth callback
+  useEffect(() => {
+    if (searchParams.get('step') === 'mfa') {
+      const storedMfaToken = sessionStorage.getItem('mfa_token');
+      const mfaFlow = sessionStorage.getItem('mfa_flow');
+      
+      if (storedMfaToken && mfaFlow === 'external_auth') {
+        setMfaToken(storedMfaToken);
+        setStep('mfa');
+      } else {
+        // No valid MFA token, redirect to credentials
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "MFA verification session expired. Please try signing in again.",
+        });
+        navigate('/login', { replace: true });
+      }
+    }
+  }, [searchParams, navigate, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +95,63 @@ export default function LoginPage() {
         title: "Sign in failed",
         description: message,
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (totpCode.length < 6 && !useBackupCode) {
+      toast({
+        variant: "destructive",
+        title: "Invalid code",
+        description: "Please enter your complete verification code.",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      if (mfaToken) {
+        // Use MFA token verification for OAuth callback flow
+        const response = await api.totp.verifyWithMfaToken(totpCode, mfaToken, useBackupCode);
+        
+        // Store token and update user
+        if (response.token) {
+          tokenManager.setToken(response.token, response.expires_at ?? null);
+        }
+        
+        // Clear MFA session data
+        sessionStorage.removeItem('mfa_token');
+        sessionStorage.removeItem('mfa_flow');
+        
+        // Refresh user context and navigate
+        await refreshUser();
+        navigate('/profile');
+      } else {
+        // Fallback to regular TOTP verification
+        await verifyTotp(totpCode, useBackupCode);
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("[Gatehouse] MFA verification failed:", error);
+      }
+
+      const message = error instanceof ApiError
+        ? error.message
+        : import.meta.env.DEV && error instanceof Error
+          ? error.message
+          : "Invalid verification code";
+      
+      toast({
+        variant: "destructive",
+        title: "Verification failed",
+        description: message,
+      });
+      setTotpCode("");
     } finally {
       setIsLoading(false);
     }
@@ -269,6 +350,62 @@ export default function LoginPage() {
     setPasskeyEmail("");
   };
 
+  /**
+   * Initiate OAuth login flow for external provider
+   */
+  const handleOAuthLogin = async (provider: OAuthProvider) => {
+    setIsLoading(true);
+    
+    try {
+      // Generate PKCE parameters
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = await computeCodeChallenge(codeVerifier);
+      const state = generateState();
+
+      // Store OAuth state for callback validation
+      storeOAuthState({
+        state,
+        codeVerifier,
+        flow: 'login',
+        provider,
+        redirectUri: `${window.location.origin}/oauth/callback`,
+      });
+
+      // Get authorization URL from backend
+      const response = await api.externalAuth.initiateLogin(provider, state);
+
+      // Redirect to provider authorization page
+      const authUrl = new URL(response.authorization_url);
+      authUrl.searchParams.set('state', response.state || state);
+      
+      // Add PKCE parameters
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+
+      window.location.href = authUrl.toString();
+      
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("[Gatehouse] OAuth login failed:", error);
+      }
+
+      let message = `Failed to initiate ${provider} sign in`;
+      if (error instanceof ApiError) {
+        message = error.message;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      toast({
+        variant: "destructive",
+        title: "Sign in failed",
+        description: message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Auto-submit when OTP is complete
   const handleOtpChange = (value: string) => {
     setTotpCode(value);
@@ -408,6 +545,95 @@ export default function LoginPage() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to sign in
         </Button>
+      </div>
+    );
+  }
+
+  // MFA verification step (after OAuth callback)
+  if (step === 'mfa') {
+    return (
+      <div className="auth-card">
+        <div className="text-center mb-8">
+          <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <ShieldCheck className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+            Two-factor authentication
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Enter the 6-digit code from your authenticator app to complete sign in
+          </p>
+        </div>
+
+        <form id="mfa-form" onSubmit={handleMfaSubmit} className="space-y-6">
+          {useBackupCode ? (
+            <div className="space-y-2">
+              <Label htmlFor="mfa-backup-code">Backup code</Label>
+              <Input
+                id="mfa-backup-code"
+                type="text"
+                placeholder="Enter 16-character backup code"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.toUpperCase())}
+                className="text-center font-mono tracking-widest"
+                maxLength={16}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <InputOTP
+                maxLength={6}
+                value={totpCode}
+                onChange={handleOtpChange}
+                autoFocus
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+          )}
+
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? (
+              "Verifying..."
+            ) : (
+              <>
+                Verify
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
+          </Button>
+        </form>
+
+        <div className="mt-6 space-y-3">
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground"
+            onClick={() => setUseBackupCode(!useBackupCode)}
+          >
+            {useBackupCode ? "Use authenticator app" : "Use a backup code instead"}
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground"
+            onClick={() => {
+              sessionStorage.removeItem('mfa_token');
+              sessionStorage.removeItem('mfa_flow');
+              navigate('/login', { replace: true });
+            }}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Cancel and return to sign in
+          </Button>
+        </div>
       </div>
     );
   }
@@ -667,7 +893,14 @@ export default function LoginPage() {
         </Button>
 
         <div className="grid grid-cols-3 gap-3">
-          <Button variant="outline" className="w-full" type="button">
+          <Button
+            variant="outline"
+            className="w-full"
+            type="button"
+            onClick={() => handleOAuthLogin('google')}
+            disabled={isLoading}
+            title="Sign in with Google"
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
                 fill="currentColor"
@@ -687,7 +920,14 @@ export default function LoginPage() {
               />
             </svg>
           </Button>
-          <Button variant="outline" className="w-full" type="button">
+          <Button
+            variant="outline"
+            className="w-full"
+            type="button"
+            onClick={() => handleOAuthLogin('github')}
+            disabled={isLoading}
+            title="Sign in with GitHub"
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
                 fill="currentColor"
@@ -695,12 +935,19 @@ export default function LoginPage() {
               />
             </svg>
           </Button>
-          <Button variant="outline" className="w-full" type="button">
+          <Button
+            variant="outline"
+            className="w-full"
+            type="button"
+            onClick={() => handleOAuthLogin('microsoft')}
+            disabled={isLoading}
+            title="Sign in with Microsoft"
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81z"
-              />
+              <path fill="#f25022" d="M1 1h10v10H1z" />
+              <path fill="#00a4ef" d="M1 13h10v10H1z" />
+              <path fill="#7fba00" d="M13 1h10v10H13z" />
+              <path fill="#ffb900" d="M13 13h10v10H13z" />
             </svg>
           </Button>
         </div>

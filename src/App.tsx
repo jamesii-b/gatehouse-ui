@@ -18,6 +18,7 @@ import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
 import InviteAcceptPage from "@/pages/auth/InviteAcceptPage";
 import OIDCConsentPage from "@/pages/auth/OIDCConsentPage";
 import OIDCErrorPage from "@/pages/auth/OIDCErrorPage";
+import OAuthCallbackPage from "@/pages/auth/OAuthCallbackPage";
 
 // User pages
 import ProfilePage from "@/pages/user/ProfilePage";
@@ -83,6 +84,7 @@ function AppRoutes() {
           <Route path="/invite" element={<InviteAcceptPage />} />
           <Route path="/consent" element={<OIDCConsentPage />} />
           <Route path="/error" element={<OIDCErrorPage />} />
+          <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
         </Route>
 
         {/* Protected routes - handles auth and MFA enforcement */}

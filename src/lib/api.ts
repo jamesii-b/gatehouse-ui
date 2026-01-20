@@ -131,6 +131,62 @@ export interface WebAuthnLoginCompleteResponse {
   expires_at: string;
 }
 
+export interface ExternalProviderListResponse {
+  providers: ExternalProvider[];
+}
+
+export interface LinkedAccountsResponse {
+  linked_accounts: LinkedAccount[];
+  unlink_available: boolean;
+}
+
+export interface ExternalProvider {
+  id: ExternalProviderId;
+  name: string;
+  is_active: boolean;
+  scopes: string[];
+}
+
+export interface ExternalProviderConfig {
+  client_id?: string;
+  client_secret?: string;
+  auth_url: string;
+  token_url: string;
+  userinfo_url: string;
+  scopes: string[];
+  redirect_uris: string[];
+  is_active: boolean;
+  settings?: Record<string, unknown>;
+}
+
+export interface LinkedAccount {
+  id: string;
+  provider_type: ExternalProviderId;
+  name: string;
+  email: string;
+  picture?: string;
+  provider_user_id?: string;
+  linked_at: string;
+  last_used_at?: string;
+  verified?: boolean;
+}
+
+export interface OAuthAuthorizeResponse {
+  authorization_url: string;
+  state: string;
+}
+
+export interface OAuthCallbackResponse {
+  success: boolean;
+  token?: string;
+  user?: User;
+  expires_in?: number;
+  requires_mfa?: boolean;
+  mfa_token?: string;
+  error?: string;
+  error_type?: string;
+}
+
 class ApiError extends Error {
   code: number;
   type: string;
@@ -384,6 +440,21 @@ export const api = {
       return response;
     },
 
+    // Verify TOTP code with an mfa_token (used after OAuth callback when MFA is required)
+    verifyWithMfaToken: async (code: string, mfaToken: string, isBackupCode = false): Promise<TotpVerifyResponse> => {
+      const response = await request<TotpVerifyResponse>('/auth/totp/verify', {
+        method: 'POST',
+        body: JSON.stringify({ code, mfa_token: mfaToken, is_backup_code: isBackupCode }),
+        credentials: 'include',
+      }, false);
+      
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
+      }
+      
+      return response;
+    },
+
     // Get TOTP status
     status: () =>
       request<TotpStatusResponse>('/auth/totp/status'),
@@ -530,6 +601,83 @@ export const api = {
     // Get current user's MFA compliance summary
     getMyCompliance: () =>
       request<MfaComplianceSummary>('/users/me/mfa-compliance'),
+  },
+
+  externalAuth: {
+    // Provider management (admin)
+    listProviders: () =>
+      request<ExternalProviderListResponse>('/auth/external/providers'),
+
+    getProviderConfig: (provider: ExternalProviderId) =>
+      request<ExternalProviderConfig | null>(`/auth/external/providers/${provider}/config`),
+
+    updateProviderConfig: (provider: ExternalProviderId, config: Partial<ExternalProviderConfig>) =>
+      request<void>(`/auth/external/providers/${provider}/config`, {
+        method: 'POST',
+        body: JSON.stringify(config),
+        credentials: 'include',
+      }),
+
+    deleteProviderConfig: (provider: ExternalProviderId) =>
+      request<void>(`/auth/external/providers/${provider}/config`, {
+        method: 'DELETE',
+        credentials: 'include',
+      }),
+
+    // User account management
+    listLinkedAccounts: () =>
+      request<LinkedAccountsResponse>('/auth/external/linked-accounts'),
+
+    unlinkAccount: (provider: ExternalProviderId) =>
+      request<void>(`/auth/external/${provider}/unlink`, {
+        method: 'DELETE',
+        credentials: 'include',
+      }),
+
+    // OAuth flow initiation
+    initiateLogin: (provider: ExternalProviderId, state: string) => {
+      const params = new URLSearchParams({ state });
+      return request<OAuthAuthorizeResponse>(
+        `/auth/external/${provider}/authorize?${params.toString()}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+        false
+      );
+    },
+
+    initiateRegister: (provider: ExternalProviderId, state: string) => {
+      const params = new URLSearchParams({ state });
+      return request<OAuthAuthorizeResponse>(
+        `/auth/external/${provider}/authorize?${params.toString()}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+        false
+      );
+    },
+
+    initiateLink: (provider: ExternalProviderId, state: string) =>
+      request<OAuthAuthorizeResponse>(`/auth/external/${provider}/link`, {
+        method: 'POST',
+        body: JSON.stringify({ state }),
+        credentials: 'include',
+      }),
+
+    // OAuth callback (called after redirect from provider)
+    handleCallback: (provider: ExternalProviderId, code: string, state: string) => {
+      const params = new URLSearchParams({ code, state });
+      return request<OAuthCallbackResponse>(
+        `/auth/external/${provider}/callback?${params.toString()}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+        false
+      );
+    },
   },
 };
 
