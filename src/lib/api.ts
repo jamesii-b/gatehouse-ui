@@ -131,44 +131,38 @@ export interface WebAuthnLoginCompleteResponse {
   expires_at: string;
 }
 
-export interface ExternalProviderListResponse {
+// External Auth Types
+export interface ExternalProvider {
+  id: string;
+  name: string;
+  type: string;
+  is_configured: boolean;
+  is_active: boolean;
+  settings: {
+    requires_domain: boolean;
+    supports_refresh_tokens: boolean;
+  };
+}
+
+export interface ExternalProvidersResponse {
   providers: ExternalProvider[];
+}
+
+export interface LinkedAccount {
+  id: string;
+  provider_type: string;
+  provider_user_id: string;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
+  verified: boolean;
+  linked_at: string | null;
+  last_used_at: string | null;
 }
 
 export interface LinkedAccountsResponse {
   linked_accounts: LinkedAccount[];
   unlink_available: boolean;
-}
-
-export interface ExternalProvider {
-  id: ExternalProviderId;
-  name: string;
-  is_active: boolean;
-  scopes: string[];
-}
-
-export interface ExternalProviderConfig {
-  client_id?: string;
-  client_secret?: string;
-  auth_url: string;
-  token_url: string;
-  userinfo_url: string;
-  scopes: string[];
-  redirect_uris: string[];
-  is_active: boolean;
-  settings?: Record<string, unknown>;
-}
-
-export interface LinkedAccount {
-  id: string;
-  provider_type: ExternalProviderId;
-  name: string;
-  email: string;
-  picture?: string;
-  provider_user_id?: string;
-  linked_at: string;
-  last_used_at?: string;
-  verified?: boolean;
 }
 
 export interface OAuthAuthorizeResponse {
@@ -177,14 +171,14 @@ export interface OAuthAuthorizeResponse {
 }
 
 export interface OAuthCallbackResponse {
-  success: boolean;
-  token?: string;
-  user?: User;
-  expires_in?: number;
-  requires_mfa?: boolean;
-  mfa_token?: string;
-  error?: string;
-  error_type?: string;
+  token: string;
+  expires_in: number;
+  token_type: string;
+  user: User;
+}
+
+export interface LinkAccountResponse {
+  linked_account: LinkedAccount;
 }
 
 class ApiError extends Error {
@@ -604,80 +598,35 @@ export const api = {
   },
 
   externalAuth: {
-    // Provider management (admin)
+    // List available providers
     listProviders: () =>
-      request<ExternalProviderListResponse>('/auth/external/providers'),
+      request<ExternalProvidersResponse>('/auth/external/providers'),
 
-    getProviderConfig: (provider: ExternalProviderId) =>
-      request<ExternalProviderConfig | null>(`/auth/external/providers/${provider}/config`),
-
-    updateProviderConfig: (provider: ExternalProviderId, config: Partial<ExternalProviderConfig>) =>
-      request<void>(`/auth/external/providers/${provider}/config`, {
-        method: 'POST',
-        body: JSON.stringify(config),
-        credentials: 'include',
-      }),
-
-    deleteProviderConfig: (provider: ExternalProviderId) =>
-      request<void>(`/auth/external/providers/${provider}/config`, {
-        method: 'DELETE',
-        credentials: 'include',
-      }),
-
-    // User account management
+    // Get linked accounts for current user
     listLinkedAccounts: () =>
       request<LinkedAccountsResponse>('/auth/external/linked-accounts'),
 
-    unlinkAccount: (provider: ExternalProviderId) =>
-      request<void>(`/auth/external/${provider}/unlink`, {
+    // Initiate OAuth login flow
+    initiateLogin: (provider: string, options?: { redirect_uri?: string; organization_id?: string }) =>
+      request<OAuthAuthorizeResponse>(`/auth/external/${provider}/authorize`, {
+        method: 'GET',
+        credentials: 'include',
+      }, false),
+
+    // Initiate account linking flow (requires auth)
+    initiateLink: (provider: string, redirect_uri?: string) =>
+      request<OAuthAuthorizeResponse>(`/auth/external/${provider}/link`, {
+        method: 'POST',
+        body: JSON.stringify({ redirect_uri }),
+        credentials: 'include',
+      }),
+
+    // Unlink an external account
+    unlinkAccount: (provider: string) =>
+      request<{ message: string }>(`/auth/external/${provider}/unlink`, {
         method: 'DELETE',
         credentials: 'include',
       }),
-
-    // OAuth flow initiation
-    initiateLogin: (provider: ExternalProviderId, state: string) => {
-      const params = new URLSearchParams({ state });
-      return request<OAuthAuthorizeResponse>(
-        `/auth/external/${provider}/authorize?${params.toString()}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        },
-        false
-      );
-    },
-
-    initiateRegister: (provider: ExternalProviderId, state: string) => {
-      const params = new URLSearchParams({ state });
-      return request<OAuthAuthorizeResponse>(
-        `/auth/external/${provider}/authorize?${params.toString()}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        },
-        false
-      );
-    },
-
-    initiateLink: (provider: ExternalProviderId, state: string) =>
-      request<OAuthAuthorizeResponse>(`/auth/external/${provider}/link`, {
-        method: 'POST',
-        body: JSON.stringify({ state }),
-        credentials: 'include',
-      }),
-
-    // OAuth callback (called after redirect from provider)
-    handleCallback: (provider: ExternalProviderId, code: string, state: string) => {
-      const params = new URLSearchParams({ code, state });
-      return request<OAuthCallbackResponse>(
-        `/auth/external/${provider}/callback?${params.toString()}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        },
-        false
-      );
-    },
   },
 };
 

@@ -1,201 +1,180 @@
 /**
- * PKCE (Proof Key for Code Exchange) utilities for OAuth authentication.
- * Provides secure code_verifier/code_challenge generation and state management.
+ * PKCE utilities and OAuth state management for external authentication flow.
+ * Supports Google OAuth with PKCE (Proof Key for Code Exchange).
  */
-
-import { base64UrlEncode } from './encoding';
 
 /**
- * OAuth flow types supported by the application.
+ * OAuth flow types for state management.
  */
-export type OAuthFlowType = 'login' | 'register' | 'link';
+export type OAuthFlow = 'login' | 'register' | 'link';
 
 /**
- * OAuth provider types.
+ * Parameters for storing OAuth state.
  */
-export type OAuthProvider = 'google' | 'github' | 'microsoft';
-
-/**
- * Interface representing stored OAuth state in sessionStorage.
- */
-export interface OAuthState {
-  /** The state parameter for CSRF protection */
+export interface OAuthStateParams {
   state: string;
-  /** The code_verifier for PKCE exchange */
-  codeVerifier: string;
-  /** The type of OAuth flow */
-  flowType: OAuthFlowType;
-  /** The OAuth provider */
-  provider: OAuthProvider;
-  /** The redirect URI for the callback */
-  redirectUri: string;
-  /** Timestamp when the state expires */
-  expiresAt: number;
+  codeVerifier?: string;
+  flow: OAuthFlow;
+  provider: string;
+  redirectUri?: string;
 }
 
 /**
- * Storage key prefix for OAuth state in sessionStorage.
+ * Retrieved OAuth state with metadata.
  */
-const OAUTH_STATE_PREFIX = 'oauth_state_';
+export interface OAuthStateData {
+  state: string;
+  codeVerifier?: string;
+  flow: OAuthFlow;
+  provider: string;
+  redirectUri?: string;
+  timestamp: number;
+}
 
 /**
- * Default expiry time for OAuth state in milliseconds (10 minutes).
+ * State expiration time in milliseconds (10 minutes).
  */
-const DEFAULT_OAUTH_STATE_EXPIRY = 10 * 60 * 1000;
+const STATE_EXPIRATION_MS = 10 * 60 * 1000;
 
 /**
- * Generates a cryptographically secure code_verifier.
- * Per RFC 7636, the code_verifier should be 43-128 characters
- * consisting of [A-Z], [a-z], [0-9], "-", ".", "_", "~".
+ * Generate a cryptographically secure code verifier for PKCE.
+ * The code verifier is a high-entropy cryptographic random string.
  * 
- * @returns A random URL-safe code_verifier string
+ * @returns A URL-safe base64-encoded string (43-128 characters)
  */
 export function generateCodeVerifier(): string {
-  // Generate 32 random bytes (256 bits) for the verifier
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
+  // Generate 32 bytes of random data
+  const randomBytes = new Uint8Array(32);
+  crypto.getRandomValues(randomBytes);
   
-  // Encode as base64url without padding
-  return base64UrlEncode(array);
+  return base64UrlEncode(randomBytes);
 }
 
 /**
- * Generates a cryptographically secure state parameter for CSRF protection.
+ * Compute the S256 code challenge from a code verifier.
+ * Uses SHA-256 hash followed by URL-safe base64 encoding.
  * 
- * @returns A random URL-safe state string
- */
-export function generateState(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return base64UrlEncode(array);
-}
-
-/**
- * Computes the S256 code_challenge from a code_verifier.
- * Uses SHA-256 hash followed by base64url encoding without padding.
- * 
- * @param verifier - The code_verifier to compute the challenge from
- * @returns The S256 code_challenge as a base64url-encoded string
+ * @param verifier - The PKCE code verifier
+ * @returns The S256 code challenge
  */
 export async function computeCodeChallenge(verifier: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return base64UrlEncode(new Uint8Array(hash));
+  // Convert base64url string back to bytes
+  const verifierBytes = base64UrlDecode(verifier);
+  
+  // Compute SHA-256 hash
+  const hashBuffer = await crypto.subtle.digest('SHA-256', verifierBytes);
+  const hashBytes = new Uint8Array(hashBuffer);
+  
+  // Encode as base64url without padding
+  return base64UrlEncode(hashBytes);
 }
 
 /**
- * Stores OAuth state in sessionStorage with an expiry time.
- *
- * @param stateData - Object containing OAuth state parameters
+ * Generate a secure state parameter for CSRF protection.
+ * 
+ * @returns A URL-safe base64-encoded string (16 bytes)
  */
-export function storeOAuthState(stateData: {
-  state: string;
-  codeVerifier: string;
-  flow: OAuthFlowType;
-  provider: OAuthProvider;
-  redirectUri: string;
-}): void {
-  const expiresAt = Date.now() + DEFAULT_OAUTH_STATE_EXPIRY;
+export function generateState(): string {
+  const randomBytes = new Uint8Array(16);
+  crypto.getRandomValues(randomBytes);
   
-  const oauthState: OAuthState = {
-    state: stateData.state,
-    codeVerifier: stateData.codeVerifier,
-    flowType: stateData.flow,
-    provider: stateData.provider,
-    redirectUri: stateData.redirectUri,
-    expiresAt,
+  return base64UrlEncode(randomBytes);
+}
+
+/**
+ * Store OAuth state in sessionStorage for validation on callback.
+ * 
+ * @param params - OAuth state parameters including state, code verifier, flow, and provider
+ */
+export function storeOAuthState(params: OAuthStateParams): void {
+  const storageKey = `oauth_state_${params.state}`;
+  
+  const stateData: OAuthStateData = {
+    ...params,
+    timestamp: Date.now(),
   };
   
-  const storageKey = `${OAUTH_STATE_PREFIX}${stateData.state}`;
-  sessionStorage.setItem(storageKey, JSON.stringify(oauthState));
+  sessionStorage.setItem(storageKey, JSON.stringify(stateData));
 }
 
 /**
- * Retrieves OAuth state from sessionStorage if it exists and hasn't expired.
+ * Retrieve and validate OAuth state from sessionStorage.
+ * Returns null if state is not found or has expired.
  * 
- * @param state - The state parameter to look up
- * @returns The OAuthState if found and valid, null otherwise
+ * @param state - The state parameter from the OAuth callback
+ * @returns The stored OAuth state data or null if invalid/expired
  */
-export function getOAuthState(state: string): OAuthState | null {
-  const storageKey = `${OAUTH_STATE_PREFIX}${state}`;
-  const stored = sessionStorage.getItem(storageKey);
+export function getOAuthState(state: string): OAuthStateData | null {
+  const storageKey = `oauth_state_${state}`;
+  const storedData = sessionStorage.getItem(storageKey);
   
-  if (!stored) {
+  if (!storedData) {
     return null;
   }
   
   try {
-    const oauthState: OAuthState = JSON.parse(stored);
+    const stateData: OAuthStateData = JSON.parse(storedData);
     
-    // Check if the state has expired
-    if (Date.now() > oauthState.expiresAt) {
-      // Clean up expired state
+    // Check expiration
+    const now = Date.now();
+    const age = now - stateData.timestamp;
+    
+    if (age > STATE_EXPIRATION_MS) {
+      // State has expired, clean up
       clearOAuthState(state);
       return null;
     }
     
-    return oauthState;
+    return stateData;
   } catch {
-    // Invalid JSON, clean up and return null
+    // Invalid JSON, clean up
     clearOAuthState(state);
     return null;
   }
 }
 
 /**
- * Clears OAuth state from sessionStorage.
+ * Clear OAuth state from sessionStorage.
  * 
  * @param state - The state parameter to clear
  */
 export function clearOAuthState(state: string): void {
-  const storageKey = `${OAUTH_STATE_PREFIX}${state}`;
+  const storageKey = `oauth_state_${state}`;
   sessionStorage.removeItem(storageKey);
 }
 
 /**
- * Clears all expired OAuth states from sessionStorage.
- * Useful for cleanup operations.
+ * Encode bytes to URL-safe base64 without padding.
+ * 
+ * @param bytes - The bytes to encode
+ * @returns URL-safe base64 encoded string
  */
-export function cleanupExpiredOAuthStates(): void {
-  for (let i = 0; i < sessionStorage.length; i++) {
-    const key = sessionStorage.key(i);
-    
-    if (key && key.startsWith(OAUTH_STATE_PREFIX)) {
-      try {
-        const stored = sessionStorage.getItem(key);
-        if (stored) {
-          const oauthState: OAuthState = JSON.parse(stored);
-          
-          if (Date.now() > oauthState.expiresAt) {
-            sessionStorage.removeItem(key);
-          }
-        }
-      } catch {
-        // Invalid entry, remove it
-        sessionStorage.removeItem(key);
-      }
-    }
-  }
+function base64UrlEncode(bytes: Uint8Array): string {
+  const base64 = btoa(String.fromCharCode(...bytes));
+  return base64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 /**
- * Validates that a code_verifier meets PKCE requirements.
- * Per RFC 7636, the code_verifier must be 43-128 characters
- * and match the character set [A-Z], [a-z], [0-9], "-", ".", "_", "~".
+ * Decode URL-safe base64 string to bytes.
  * 
- * @param verifier - The code_verifier to validate
- * @returns true if valid, false otherwise
+ * @param str - The URL-safe base64 string
+ * @returns The decoded bytes
  */
-export function isValidCodeVerifier(verifier: string): boolean {
-  // RFC 7636 defines the character set for code_verifier
-  const validPattern = /^[A-Za-z0-9\-._~]+$/;
-  
-  // Check length requirements (43-128 characters)
-  if (verifier.length < 43 || verifier.length > 128) {
-    return false;
+function base64UrlDecode(str: string): Uint8Array {
+  // Add padding if necessary
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = base64.length % 4;
+  if (padding) {
+    base64 += '='.repeat(4 - padding);
   }
   
-  // Check character set
-  return validPattern.test(verifier);
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }

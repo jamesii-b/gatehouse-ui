@@ -377,10 +377,6 @@ export default function LoginPage() {
       // Redirect to provider authorization page
       const authUrl = new URL(response.authorization_url);
       authUrl.searchParams.set('state', response.state || state);
-      
-      // Add PKCE parameters
-      authUrl.searchParams.set('code_challenge', codeChallenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
 
       window.location.href = authUrl.toString();
       
