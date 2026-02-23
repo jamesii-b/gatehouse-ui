@@ -45,6 +45,19 @@ export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
   }
 }
 
+// Helper to ensure rp.id is valid for the current origin
+function ensureValidRpId(rpId: string): string {
+  const currentHost = window.location.hostname;
+  // valid if rpId matches host or is a parent domain (e.g. host ends with .rpId)
+  const isValid = currentHost === rpId || currentHost.endsWith('.' + rpId);
+  
+  if (!isValid) {
+    console.warn(`[WebAuthn] Invalid rp.id "${rpId}" for current host "${currentHost}". Overriding with "${currentHost}".`);
+    return currentHost;
+  }
+  return rpId;
+}
+
 // Types for WebAuthn API responses
 export interface WebAuthnRegistrationOptions {
   rp: {
@@ -107,6 +120,10 @@ export async function createRegistrationCredential(
 ): Promise<PublicKeyCredential> {
   const publicKeyOptions: PublicKeyCredentialCreationOptions = {
     ...options,
+    rp: {
+      ...options.rp,
+      id: ensureValidRpId(options.rp.id),
+    },
     challenge: base64ToBuffer(options.challenge),
     user: {
       id: base64ToBuffer(options.user.id),
@@ -157,7 +174,7 @@ export async function createLoginAssertion(
   const publicKeyOptions: PublicKeyCredentialRequestOptions = {
     challenge: base64ToBuffer(options.challenge),
     timeout: options.timeout,
-    rpId: options.rpId,
+    rpId: ensureValidRpId(options.rpId),
     allowCredentials: options.allowCredentials.map((cred) => ({
       ...cred,
       id: base64ToBuffer(cred.id),

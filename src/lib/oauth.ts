@@ -9,6 +9,11 @@
 export type OAuthFlow = 'login' | 'register' | 'link';
 
 /**
+ * Supported OAuth providers.
+ */
+export type OAuthProvider = 'google' | 'github' | 'microsoft';
+
+/**
  * Parameters for storing OAuth state.
  */
 export interface OAuthStateParams {
