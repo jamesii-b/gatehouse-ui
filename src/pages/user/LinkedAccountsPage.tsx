@@ -1,20 +1,38 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Link2, Unlink, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { api, LinkedAccount, ExternalProvider, ExternalProviderId, ApiError } from "@/lib/api";
-import { storeOAuthState, generateState, generateCodeVerifier } from "@/lib/oauth";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LinkedAccountsPage() {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [providers, setProviders] = useState<ExternalProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLinking, setIsLinking] = useState<ExternalProviderId | null>(null);
   const [isUnlinking, setIsUnlinking] = useState<ExternalProviderId | null>(null);
+
+  // Show success toast when arriving back from OAuth link callback
+  useEffect(() => {
+    const linked = searchParams.get("linked");
+    const provider = searchParams.get("provider");
+    if (linked === "1") {
+      toast({
+        title: "Account linked",
+        description: provider
+          ? `Your ${provider.charAt(0).toUpperCase() + provider.slice(1)} account has been linked.`
+          : "Your account has been linked successfully.",
+      });
+      // Clean the query params so the toast doesn't re-fire on refresh
+      setSearchParams({}, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -68,25 +86,17 @@ export default function LinkedAccountsPage() {
 
   const handleConnect = async (provider: ExternalProviderId) => {
     setIsLinking(provider);
-    
+
     try {
-      const state = generateState();
-      const codeVerifier = await generateCodeVerifier();
-      
-      const response = await api.externalAuth.initiateLink(provider, state);
-      
-      // Store OAuth state for callback
-      storeOAuthState({
-        state,
-        codeVerifier,
-        flow: 'link',
-        provider,
-        redirectUri: `${window.location.origin}/oauth/callback`,
-      });
+      // The backend link flow also redirects to the backend callback, which
+      // then redirects to the frontend /oauth/callback with flow=link.
+      const backendCallbackUri = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1'}/auth/external/${provider}/callback`;
+
+      const response = await api.externalAuth.initiateLink(provider, backendCallbackUri);
 
       // Redirect to authorization
       window.location.href = response.authorization_url;
-      
+
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[LinkedAccounts] Connect failed:", error);
@@ -209,7 +219,7 @@ export default function LinkedAccountsPage() {
                         variant="outline"
                         size="sm"
                         disabled={isDisconnecting}
-                        onClick={() => handleDisconnect(provider.id)}
+                        onClick={() => handleDisconnect(provider.id as ExternalProviderId)}
                       >
                         {isDisconnecting ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -223,7 +233,7 @@ export default function LinkedAccountsPage() {
                     <Button
                       size="sm"
                       disabled={!provider.is_active || isConnecting}
-                      onClick={() => handleConnect(provider.id)}
+                      onClick={() => handleConnect(provider.id as ExternalProviderId)}
                     >
                       {isConnecting ? (
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
