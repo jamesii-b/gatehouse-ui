@@ -1,20 +1,33 @@
-import { Building2, Users, Shield, Key, ArrowRight, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Users, Shield, Key, ArrowRight, TrendingUp, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { api, Organization, OIDCClient } from "@/lib/api";
 
 export default function OrgOverviewPage() {
-  // Mock organization data
-  const org = {
-    name: "Acme Corp",
-    createdAt: "January 2024",
-    stats: {
-      totalMembers: 24,
-      activeToday: 18,
-      pendingInvites: 3,
-      oidcClients: 5,
-    },
-  };
+  const [org, setOrg] = useState<Organization | null>(null);
+  const [memberCount, setMemberCount] = useState<number>(0);
+  const [clientCount, setClientCount] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    api.users.organizations()
+      .then(async (data) => {
+        if (!data.organizations.length) return;
+        const first = data.organizations[0];
+        setOrg(first);
+
+        const [membersResp, clientsResp] = await Promise.allSettled([
+          api.organizations.getMembers(first.id),
+          api.organizations.getClients(first.id),
+        ]);
+
+        if (membersResp.status === "fulfilled") setMemberCount(membersResp.value.count);
+        if (clientsResp.status === "fulfilled") setClientCount((clientsResp.value as { clients: OIDCClient[]; count: number }).count);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const quickLinks = [
     {
@@ -37,6 +50,18 @@ export default function OrgOverviewPage() {
     },
   ];
 
+  if (isLoading) {
+    return (
+      <div className="page-container flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const createdAt = org?.created_at
+    ? new Date(org.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : "";
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -45,42 +70,20 @@ export default function OrgOverviewPage() {
             <Building2 className="w-7 h-7 text-primary" />
           </div>
           <div>
-            <h1 className="page-title">{org.name}</h1>
-            <p className="page-description">Created {org.createdAt}</p>
+            <h1 className="page-title">{org?.name ?? "Organization"}</h1>
+            {createdAt && <p className="page-description">Created {createdAt}</p>}
           </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-8">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 mb-8">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Members</p>
-                <p className="text-2xl font-semibold">{org.stats.totalMembers}</p>
-              </div>
-              <Users className="w-8 h-8 text-muted-foreground/30" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Active Today</p>
-                <p className="text-2xl font-semibold">{org.stats.activeToday}</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-muted-foreground/30" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Pending Invites</p>
-                <p className="text-2xl font-semibold">{org.stats.pendingInvites}</p>
+                <p className="text-2xl font-semibold">{memberCount}</p>
               </div>
               <Users className="w-8 h-8 text-muted-foreground/30" />
             </div>
@@ -91,9 +94,20 @@ export default function OrgOverviewPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">OIDC Clients</p>
-                <p className="text-2xl font-semibold">{org.stats.oidcClients}</p>
+                <p className="text-2xl font-semibold">{clientCount}</p>
               </div>
               <Key className="w-8 h-8 text-muted-foreground/30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Org ID</p>
+                <p className="text-xs font-mono text-muted-foreground mt-1 truncate max-w-[140px]">{org?.id ?? "—"}</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-muted-foreground/30" />
             </div>
           </CardContent>
         </Card>

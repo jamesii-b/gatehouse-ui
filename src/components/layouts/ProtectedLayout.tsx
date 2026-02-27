@@ -2,12 +2,14 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthenticatedLayout from './AuthenticatedLayout';
 import MfaEnforcementLayout from './MfaEnforcementLayout';
+import { useOrganizations } from '@/hooks/useOrganizations';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedLayout() {
   const { isAuthenticated, isLoading, requiresMfaEnrollment } = useAuth();
+  const { isLoading: isOrgsLoading } = useOrganizations();
 
-  if (isLoading) {
+  if (isLoading || isOrgsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -27,8 +29,6 @@ export default function ProtectedLayout() {
   }
 
   return (
-    <AuthenticatedLayout>
-      <Outlet />
-    </AuthenticatedLayout>
+    <AuthenticatedLayout />
   );
 }

@@ -9,6 +9,9 @@ import {
   Settings,
   FileText,
   Key,
+  Layers,
+  GitBranch,
+  ScrollText,
 } from "lucide-react";
 import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
 import { NavLink } from "@/components/NavLink";
@@ -37,12 +40,15 @@ const userNavItems = [
 const orgNavItems = [
   { title: "Overview", url: "/org", icon: Building2 },
   { title: "Members", url: "/org/members", icon: Users },
+  { title: "Departments", url: "/org/departments", icon: Layers },
+  { title: "Principals", url: "/org/principals", icon: GitBranch },
   { title: "Policies", url: "/org/policies", icon: Settings },
   { title: "Audit Log", url: "/org/audit", icon: FileText },
 ];
 
 const adminNavItems = [
   { title: "OIDC Clients", url: "/org/clients", icon: Key },
+  { title: "System Logs",  url: "/admin/audit", icon: ScrollText },
 ];
 
 export function AppSidebar() {

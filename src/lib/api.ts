@@ -211,42 +211,30 @@ export const tokenManager = {
     if (token && expiry) {
       const expiryDate = new Date(expiry);
       if (expiryDate <= new Date()) {
-        console.log('[TokenManager] Token expired, clearing');
         tokenManager.clearToken();
         return null;
       }
-    }
-    
-    if (token) {
-      console.log('[TokenManager] Token retrieved:', token.substring(0, 20) + '...');
-    } else {
-      console.log('[TokenManager] No token found in localStorage');
     }
     
     return token;
   },
   
   setToken: (token: string, expiresAt?: string | null): void => {
-    console.log('[TokenManager] Setting token, expiresAt:', expiresAt);
     localStorage.setItem(TOKEN_KEY, token);
     if (expiresAt) {
       localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
     } else {
       localStorage.removeItem(TOKEN_EXPIRY_KEY);
     }
-    console.log('[TokenManager] Token set successfully');
   },
   
   clearToken: (): void => {
-    console.log('[TokenManager] Clearing token from localStorage');
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_EXPIRY_KEY);
   },
   
   hasValidToken: (): boolean => {
-    const hasToken = tokenManager.getToken() !== null;
-    console.log('[TokenManager] hasValidToken:', hasToken);
-    return hasToken;
+    return tokenManager.getToken() !== null;
   },
 };
 
@@ -292,9 +280,6 @@ async function request<T>(
     const token = tokenManager.getToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-      console.log('[API] Added Authorization header for endpoint:', endpoint);
-    } else {
-      console.log('[API] WARNING: No token available for authenticated endpoint:', endpoint);
     }
   }
 
@@ -370,6 +355,43 @@ export const api = {
       return response;
     },
 
+    register: async (email: string, password: string, full_name?: string): Promise<LoginResponse> => {
+      const response = await request<LoginResponse>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, password_confirm: password, full_name }),
+      }, false);
+
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
+      }
+
+      return response;
+    },
+
+    forgotPassword: (email: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, false),
+
+    resetPassword: (token: string, password: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password, password_confirm: password }),
+      }, false),
+
+    verifyEmail: (token: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }, false),
+
+    resendVerification: (email: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, false),
+
     logout: async (): Promise<void> => {
       try {
         await request<void>('/auth/logout', {
@@ -405,6 +427,26 @@ export const api = {
           new_password_confirm: newPasswordConfirm,
         }),
       }, true, { clearTokenOn401: false }),
+
+    // Get audit logs for the currently authenticated user
+    auditLogs: (params?: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<{ audit_logs: AuditLogEntry[]; count: number; page: number; per_page: number; pages: number }>(
+        `/auth/audit-logs${params ? '?' + new URLSearchParams(params).toString() : ''}`,
+        {},
+        true,
+        requestConfig,
+      ),
+  },
+
+  admin: {
+    // Get all system audit logs (admin view — returns all logs for org owners, own logs otherwise)
+    getAuditLogs: (params?: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<{ audit_logs: AuditLogEntry[]; count: number; page: number; per_page: number; pages: number; is_admin_view: boolean }>(
+        `/audit-logs${params ? '?' + new URLSearchParams(params).toString() : ''}`,
+        {},
+        true,
+        requestConfig,
+      ),
   },
 
   totp: {
@@ -635,7 +677,282 @@ export const api = {
         credentials: 'include',
       }),
   },
+
+  organizations: {
+    // Get organization by ID
+    getById: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ organization: Organization; member_count: number }>(`/organizations/${orgId}`, {}, true, requestConfig),
+
+    // Get organization members
+    getMembers: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ members: OrganizationMember[]; count: number }>(`/organizations/${orgId}/members`, {}, true, requestConfig),
+
+    // Add member to organization
+    addMember: (orgId: string, email: string, role: string, requestConfig?: RequestConfig) =>
+      request<{ member: OrganizationMember }>(`/organizations/${orgId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      }, true, requestConfig),
+
+    // Remove member from organization
+    removeMember: (orgId: string, userId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/members/${userId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Update member role
+    updateMemberRole: (orgId: string, userId: string, role: string, requestConfig?: RequestConfig) =>
+      request<{ member: OrganizationMember }>(`/organizations/${orgId}/members/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+      }, true, requestConfig),
+
+    // Get organization audit logs
+    getAuditLogs: (orgId: string, params?: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<{ audit_logs: AuditLogEntry[]; count: number }>(
+        `/organizations/${orgId}/audit-logs${params ? '?' + new URLSearchParams(params).toString() : ''}`,
+        {},
+        true,
+        requestConfig
+      ),
+
+    // Get departments
+    getDepartments: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ departments: Department[]; count: number }>(`/organizations/${orgId}/departments`, {}, true, requestConfig),
+
+    // Create department
+    createDepartment: (orgId: string, name: string, description?: string, requestConfig?: RequestConfig) =>
+      request<{ department: Department }>(`/organizations/${orgId}/departments`, {
+        method: 'POST',
+        body: JSON.stringify({ name, description }),
+      }, true, requestConfig),
+
+    // Update department
+    updateDepartment: (orgId: string, deptId: string, data: { name?: string; description?: string }, requestConfig?: RequestConfig) =>
+      request<{ department: Department }>(`/organizations/${orgId}/departments/${deptId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }, true, requestConfig),
+
+    // Delete department
+    deleteDepartment: (orgId: string, deptId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/departments/${deptId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Get department members
+    getDepartmentMembers: (orgId: string, deptId: string, requestConfig?: RequestConfig) =>
+      request<{ members: DepartmentMember[]; count: number }>(`/organizations/${orgId}/departments/${deptId}/members`, {}, true, requestConfig),
+
+    // Add member to department
+    addDepartmentMember: (orgId: string, deptId: string, email: string, requestConfig?: RequestConfig) =>
+      request<{ member: DepartmentMember }>(`/organizations/${orgId}/departments/${deptId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, true, requestConfig),
+
+    // Remove member from department
+    removeDepartmentMember: (orgId: string, deptId: string, userId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/departments/${deptId}/members/${userId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Get principals
+    getPrincipals: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ principals: Principal[]; count: number }>(`/organizations/${orgId}/principals`, {}, true, requestConfig),
+
+    // Create principal
+    createPrincipal: (orgId: string, name: string, description?: string, requestConfig?: RequestConfig) =>
+      request<{ principal: Principal }>(`/organizations/${orgId}/principals`, {
+        method: 'POST',
+        body: JSON.stringify({ name, description }),
+      }, true, requestConfig),
+
+    // Update principal
+    updatePrincipal: (orgId: string, principalId: string, data: { name?: string; description?: string }, requestConfig?: RequestConfig) =>
+      request<{ principal: Principal }>(`/organizations/${orgId}/principals/${principalId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }, true, requestConfig),
+
+    // Delete principal
+    deletePrincipal: (orgId: string, principalId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Get principal members
+    getPrincipalMembers: (orgId: string, principalId: string, requestConfig?: RequestConfig) =>
+      request<{ members: PrincipalMember[]; count: number }>(`/organizations/${orgId}/principals/${principalId}/members`, {}, true, requestConfig),
+
+    // Add member to principal
+    addPrincipalMember: (orgId: string, principalId: string, email: string, requestConfig?: RequestConfig) =>
+      request<{ member: PrincipalMember }>(`/organizations/${orgId}/principals/${principalId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, true, requestConfig),
+
+    // Remove member from principal
+    removePrincipalMember: (orgId: string, principalId: string, userId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/members/${userId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Link principal to department
+    linkPrincipalToDepartment: (orgId: string, principalId: string, departmentId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/departments`, {
+        method: 'POST',
+        body: JSON.stringify({ department_id: departmentId }),
+      }, true, requestConfig),
+
+    // Unlink principal from department
+    unlinkPrincipalFromDepartment: (orgId: string, principalId: string, departmentId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/departments/${departmentId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Create invite token
+    createInvite: (orgId: string, email: string, role: string, requestConfig?: RequestConfig) =>
+      request<{ invite: OrgInvite }>(`/organizations/${orgId}/invites`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      }, true, requestConfig),
+
+    // List OIDC clients
+    getClients: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ clients: OIDCClient[]; count: number }>(`/organizations/${orgId}/clients`, {}, true, requestConfig),
+
+    // Create OIDC client
+    createClient: (orgId: string, name: string, redirect_uris: string[], requestConfig?: RequestConfig) =>
+      request<{ client: OIDCClientWithSecret }>(`/organizations/${orgId}/clients`, {
+        method: 'POST',
+        body: JSON.stringify({ name, redirect_uris }),
+      }, true, requestConfig),
+
+    // Delete OIDC client
+    deleteClient: (orgId: string, clientId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/clients/${clientId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Send MFA reminder to a member
+    sendMfaReminder: (orgId: string, userId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/members/${userId}/send-mfa-reminder`, {
+        method: 'POST',
+      }, true, requestConfig),
+  },
+
+  invites: {
+    // Get invite details by token (unauthenticated)
+    getInfo: (token: string) =>
+      request<{ email: string; organization: { id: string; name: string }; role: string }>(
+        `/invites/${token}`,
+        {},
+        false,
+      ),
+
+    // Accept invite (unauthenticated)
+    accept: (token: string, full_name: string, password: string) =>
+      request<LoginResponse>(
+        `/invites/${token}/accept`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ full_name, password, password_confirm: password }),
+        },
+        false,
+      ),
+  },
 };
+
+// Organization types
+export interface OrganizationMember {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  role: string;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  user_id: string | null;
+  organization_id: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  request_id: string | null;
+  description: string | null;
+  success: boolean;
+  error_message: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}
+
+export interface Department {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface DepartmentMember {
+  id: string;
+  user_id: string;
+  department_id: string;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}
+
+export interface Principal {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface PrincipalMember {
+  id: string;
+  user_id: string;
+  principal_id: string;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}
+
+export interface OrgInvite {
+  id: string;
+  email: string;
+  role: string;
+  expires_at: string;
+}
+
+export interface OIDCClient {
+  id: string;
+  name: string;
+  client_id: string;
+  redirect_uris: string[];
+  scopes: string[];
+  grant_types: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface OIDCClientWithSecret extends OIDCClient {
+  client_secret: string;
+}
 
 // Policy types
 export interface OrgPolicyResponse {

@@ -1,90 +1,77 @@
-import { useState } from "react";
-import { Search, Filter, Download, User, Settings, Key, UserPlus, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, Filter, Download, User, Settings, Key, UserPlus, AlertTriangle, Loader2 } from "lucide-react";
+import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api, AuditLogEntry } from "@/lib/api";
+import { useCurrentOrganizationId } from "@/hooks/useCurrentOrganization";
 
-const auditEvents = [
-  {
-    id: "1",
-    type: "member_invited",
-    actor: "John Doe",
-    target: "alice@example.com",
-    timestamp: "2024-01-15T10:30:00Z",
-    details: "Invited as member",
-  },
-  {
-    id: "2",
-    type: "policy_changed",
-    actor: "John Doe",
-    target: "Password Policy",
-    timestamp: "2024-01-15T09:00:00Z",
-    details: "Minimum length changed from 8 to 12",
-  },
-  {
-    id: "3",
-    type: "member_disabled",
-    actor: "Jane Smith",
-    target: "bob@example.com",
-    timestamp: "2024-01-14T15:45:00Z",
-    details: "Account disabled",
-  },
-  {
-    id: "4",
-    type: "client_created",
-    actor: "John Doe",
-    target: "GitLab",
-    timestamp: "2024-01-14T12:00:00Z",
-    details: "OIDC client created",
-  },
-  {
-    id: "5",
-    type: "role_changed",
-    actor: "John Doe",
-    target: "jane@example.com",
-    timestamp: "2024-01-13T09:00:00Z",
-    details: "Role changed from member to admin",
-  },
-];
-
-const getEventIcon = (type: string) => {
-  switch (type) {
-    case "member_invited":
-    case "role_changed":
-      return <UserPlus className="w-4 h-4" />;
-    case "policy_changed":
-      return <Settings className="w-4 h-4" />;
-    case "member_disabled":
-      return <AlertTriangle className="w-4 h-4" />;
-    case "client_created":
-      return <Key className="w-4 h-4" />;
-    default:
-      return <User className="w-4 h-4" />;
+const getEventIcon = (action: string) => {
+  if (action.includes("member") || action.includes("MEMBER")) {
+    return <UserPlus className="w-4 h-4" />;
   }
+  if (action.includes("policy") || action.includes("POLICY") || action.includes("mfa")) {
+    return <Settings className="w-4 h-4" />;
+  }
+  if (action.includes("delete") || action.includes("DELETE") || action.includes("disable")) {
+    return <AlertTriangle className="w-4 h-4" />;
+  }
+  if (action.includes("client") || action.includes("oidc") || action.includes("key")) {
+    return <Key className="w-4 h-4" />;
+  }
+  return <User className="w-4 h-4" />;
 };
 
-const getEventTitle = (type: string) => {
-  switch (type) {
-    case "member_invited":
-      return "Member invited";
-    case "policy_changed":
-      return "Policy changed";
-    case "member_disabled":
-      return "Member disabled";
-    case "client_created":
-      return "OIDC client created";
-    case "role_changed":
-      return "Role changed";
-    default:
-      return "Event";
-  }
+const getEventTitle = (action: string) => {
+  const parts = action.split(".");
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+};
+
+const getActionCategory = (action: string): string => {
+  if (action.includes("member") || action.includes("MEMBER")) return "members";
+  if (action.includes("policy") || action.includes("POLICY") || action.includes("mfa")) return "policies";
+  if (action.includes("client") || action.includes("OIDC")) return "clients";
+  return "other";
 };
 
 export default function OrgAuditPage() {
+  const params = useParams<{ orgId?: string }>();
+  const { orgId: fallbackOrgId } = useCurrentOrganizationId();
+  const orgId = params.orgId || fallbackOrgId;
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAuditLogs = useCallback(async (currentOrgId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await api.organizations.getAuditLogs(currentOrgId);
+      setAuditLogs(response.audit_logs || []);
+    } catch (err) {
+      console.error("Failed to fetch audit logs:", err);
+      setError("Failed to load audit logs. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setError(null);
+    setAuditLogs([]);
+    if (!orgId) {
+      setIsLoading(false);
+      return;
+    }
+    fetchAuditLogs(orgId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -95,6 +82,20 @@ export default function OrgAuditPage() {
       minute: "2-digit",
     }).format(date);
   };
+
+  const filteredLogs = auditLogs.filter((log) => {
+    const matchesSearch =
+      search === "" ||
+      log.description?.toLowerCase().includes(search.toLowerCase()) ||
+      log.action.toLowerCase().includes(search.toLowerCase()) ||
+      log.user?.email.toLowerCase().includes(search.toLowerCase());
+
+    const matchesFilter =
+      typeFilter === "all" ||
+      getActionCategory(log.action) === typeFilter;
+
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <div className="page-container">
@@ -137,39 +138,65 @@ export default function OrgAuditPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="divide-y">
-            {auditEvents.map((event) => (
-              <div key={event.id} className="p-4 flex items-start gap-4">
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    event.type === "member_disabled"
-                      ? "bg-destructive/10 text-destructive"
-                      : "bg-accent/10 text-accent"
-                  }`}
-                >
-                  {getEventIcon(event.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-foreground">
-                      {getEventTitle(event.type)}
-                    </p>
-                    <Badge variant="secondary" className="text-xs">
-                      {event.target}
-                    </Badge>
+          {isLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Loading audit logs...</span>
+            </div>
+          ) : error ? (
+            <div className="p-8 text-center text-destructive">
+              {error}
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              No audit events found
+            </div>
+          ) : (
+            <div className="divide-y">
+              {filteredLogs.map((log) => (
+                <div key={log.id} className="p-4 flex items-start gap-4">
+                  <div
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      !log.success
+                        ? "bg-destructive/10 text-destructive"
+                        : "bg-accent/10 text-accent"
+                    }`}
+                  >
+                    {getEventIcon(log.action)}
                   </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    <span>by {event.actor}</span>
-                    <span className="mx-2">•</span>
-                    <span>{event.details}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-foreground">
+                        {getEventTitle(log.action)}
+                      </p>
+                      {log.resource_type && (
+                        <Badge variant="secondary" className="text-xs">
+                          {log.resource_type}
+                        </Badge>
+                      )}
+                      {!log.success && (
+                        <Badge variant="destructive" className="text-xs">
+                          Failed
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      <span>by {log.user?.full_name || log.user?.email || "System"}</span>
+                      {log.description && (
+                        <>
+                          <span className="mx-2">•</span>
+                          <span>{log.description}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
+                  <p className="text-sm text-muted-foreground whitespace-nowrap">
+                    {formatDate(log.created_at)}
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground whitespace-nowrap">
-                  {formatDate(event.timestamp)}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

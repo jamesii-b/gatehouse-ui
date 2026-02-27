@@ -14,11 +14,8 @@ export function useOrganizations() {
   return useQuery<Organization[], ApiError>({
     queryKey: ["organizations"],
     queryFn: async () => {
-      console.log('[useOrganizations] Fetching organizations...');
       const response = await api.users.organizations();
-      console.log('[useOrganizations] Response:', response);
-      console.log('[useOrganizations] Organizations array:', response.organizations);
-      return response.organizations;
+      return Array.isArray(response.organizations) ? response.organizations : [];
     },
     // Only fetch when user is authenticated
     enabled: isAuthenticated,

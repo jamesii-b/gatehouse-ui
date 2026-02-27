@@ -33,6 +33,9 @@ import PoliciesPage from "@/pages/org/PoliciesPage";
 import CompliancePage from "@/pages/org/CompliancePage";
 import OrgAuditPage from "@/pages/org/OrgAuditPage";
 import OIDCClientsPage from "@/pages/org/OIDCClientsPage";
+import DepartmentsPage from "@/pages/org/DepartmentsPage";
+import PrincipalsPage from "@/pages/org/PrincipalsPage";
+import SystemAuditPage from "@/pages/admin/SystemAuditPage";
 
 import NotFound from "@/pages/NotFound";
 import ApiDevTools from "@/components/dev/ApiDevTools";
@@ -98,10 +101,15 @@ function AppRoutes() {
           {/* Organization routes */}
           <Route path="/org" element={<OrgOverviewPage />} />
           <Route path="/org/members" element={<MembersPage />} />
+          <Route path="/org/departments" element={<DepartmentsPage />} />
+          <Route path="/org/principals" element={<PrincipalsPage />} />
           <Route path="/org/policies" element={<PoliciesPage />} />
           <Route path="/org/policies/compliance" element={<CompliancePage />} />
           <Route path="/org/audit" element={<OrgAuditPage />} />
           <Route path="/org/clients" element={<OIDCClientsPage />} />
+
+          {/* Admin routes */}
+          <Route path="/admin/audit" element={<SystemAuditPage />} />
         </Route>
 
         {/* Catch-all */}

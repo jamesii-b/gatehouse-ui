@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Plus, Key, ExternalLink, MoreHorizontal, Copy, RefreshCw, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, Key, MoreHorizontal, Copy, Trash2, Loader2, AlertCircle, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -21,39 +21,75 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-const clients = [
-  {
-    id: "1",
-    name: "GitLab",
-    clientId: "gitlab_prod_xxxxxxxxxxxxx",
-    redirectUris: ["https://gitlab.example.com/callback"],
-    scopes: ["openid", "profile", "email"],
-    createdAt: "2024-01-10",
-    lastUsed: "2 hours ago",
-  },
-  {
-    id: "2",
-    name: "Grafana",
-    clientId: "grafana_prod_xxxxxxxxxxxxx",
-    redirectUris: ["https://grafana.example.com/login/generic_oauth"],
-    scopes: ["openid", "profile"],
-    createdAt: "2024-01-08",
-    lastUsed: "5 minutes ago",
-  },
-  {
-    id: "3",
-    name: "OAuth2 Proxy",
-    clientId: "oauth2proxy_xxxxxxxxxxxxx",
-    redirectUris: ["https://auth.example.com/oauth2/callback"],
-    scopes: ["openid", "profile", "email", "groups"],
-    createdAt: "2024-01-05",
-    lastUsed: "1 day ago",
-  },
-];
+import { api, OIDCClient, OIDCClientWithSecret } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 export default function OIDCClientsPage() {
+  const { toast } = useToast();
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [clients, setClients] = useState<OIDCClient[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newSecret, setNewSecret] = useState<{ clientId: string; secret: string } | null>(null);
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const urisRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadData = (id: string) => {
+    api.organizations.getClients(id)
+      .then((data) => setClients(data.clients))
+      .catch(() => toast({ title: "Error", description: "Failed to load OIDC clients.", variant: "destructive" }))
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    api.users.organizations()
+      .then((data) => {
+        if (!data.organizations.length) { setIsLoading(false); return; }
+        const id = data.organizations[0].id;
+        setOrgId(id);
+        loadData(id);
+      })
+      .catch(() => { setIsLoading(false); });
+  }, []);
+
+  const handleCreate = async () => {
+    if (!orgId || !nameRef.current || !urisRef.current) return;
+    const name = nameRef.current.value.trim();
+    const uris = urisRef.current.value.trim().split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
+    if (!name || !uris.length) return;
+
+    setIsCreating(true);
+    try {
+      const result = await api.organizations.createClient(orgId, name, uris);
+      const created = result.client as OIDCClientWithSecret;
+      setClients((prev) => [...prev, created]);
+      setNewSecret({ clientId: created.client_id, secret: created.client_secret });
+      setIsCreateOpen(false);
+    } catch {
+      toast({ title: "Error", description: "Failed to create client.", variant: "destructive" });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleDelete = async (clientId: string) => {
+    if (!orgId) return;
+    try {
+      await api.organizations.deleteClient(orgId, clientId);
+      setClients((prev) => prev.filter((c) => c.id !== clientId));
+      toast({ title: "Client deleted", description: "OIDC client deactivated successfully." });
+    } catch {
+      toast({ title: "Error", description: "Failed to delete client.", variant: "destructive" });
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() =>
+      toast({ title: "Copied", description: "Copied to clipboard." })
+    );
+  };
 
   return (
     <div className="page-container">
@@ -81,7 +117,7 @@ export default function OIDCClientsPage() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="clientName">Client name</Label>
-                <Input id="clientName" placeholder="My Application" />
+                <Input id="clientName" placeholder="My Application" ref={nameRef} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="redirectUris">Redirect URIs</Label>
@@ -89,17 +125,18 @@ export default function OIDCClientsPage() {
                   id="redirectUris"
                   placeholder="https://myapp.example.com/callback"
                   className="min-h-[80px]"
+                  ref={urisRef}
                 />
                 <p className="text-xs text-muted-foreground">
                   One URI per line. These are the allowed callback URLs.
                 </p>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+                <Button variant="outline" onClick={() => setIsCreateOpen(false)} disabled={isCreating}>
                   Cancel
                 </Button>
-                <Button onClick={() => setIsCreateOpen(false)}>
-                  Create client
+                <Button onClick={handleCreate} disabled={isCreating}>
+                  {isCreating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : "Create client"}
                 </Button>
               </div>
             </div>
@@ -107,71 +144,101 @@ export default function OIDCClientsPage() {
         </Dialog>
       </div>
 
-      <div className="space-y-4">
-        {clients.map((client) => (
-          <Card key={client.id}>
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Key className="w-6 h-6 text-primary" />
+      {/* Show new client secret once */}
+      {newSecret && (
+        <Card className="mb-4 border-success/50 bg-success/5">
+          <CardContent className="p-4 flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-success mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-foreground">Client created — save your secret now</p>
+              <p className="text-sm text-muted-foreground mb-2">This secret will not be shown again.</p>
+              <div className="flex items-center gap-2">
+                <code className="text-xs bg-muted px-2 py-1 rounded font-mono break-all">{newSecret.secret}</code>
+                <Button variant="ghost" size="icon" className="w-6 h-6 flex-shrink-0" onClick={() => copyToClipboard(newSecret.secret)}>
+                  <Copy className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => setNewSecret(null)}>×</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : clients.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <AlertCircle className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="text-muted-foreground">No OIDC clients configured yet.</p>
+            <Button className="mt-4" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add your first client
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {clients.map((client) => (
+            <Card key={client.id}>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Key className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{client.name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                          {client.client_id}
+                        </code>
+                        <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => copyToClipboard(client.client_id)}>
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-3">
+                        {(client.scopes ?? []).map((scope) => (
+                          <Badge key={scope} variant="secondary" className="text-xs">
+                            {scope}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{client.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                        {client.clientId}
-                      </code>
-                      <Button variant="ghost" size="icon" className="w-6 h-6">
-                        <Copy className="w-3 h-3" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="w-4 h-4" />
                       </Button>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {client.scopes.map((scope) => (
-                        <Badge key={scope} variant="secondary" className="text-xs">
-                          {scope}
-                        </Badge>
-                      ))}
-                    </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => handleDelete(client.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete client
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
+                  <span>
+                    Created {new Date(client.created_at).toLocaleDateString()}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {(client.redirect_uris ?? []).length} redirect URI{(client.redirect_uris ?? []).length !== 1 ? "s" : ""}
                   </div>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem>
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      View details
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Rotate secret
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive">
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete client
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
-                <div className="flex items-center gap-4">
-                  <span>Created {client.createdAt}</span>
-                  <span>•</span>
-                  <span>Last used {client.lastUsed}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {client.redirectUris.length} redirect URI{client.redirectUris.length > 1 ? "s" : ""}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
