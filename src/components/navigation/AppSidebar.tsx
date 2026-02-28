@@ -12,6 +12,8 @@ import {
   Layers,
   GitBranch,
   ScrollText,
+  Terminal,
+  ShieldCheck,
 } from "lucide-react";
 import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
 import { NavLink } from "@/components/NavLink";
@@ -33,6 +35,7 @@ import { cn } from "@/lib/utils";
 const userNavItems = [
   { title: "Profile", url: "/profile", icon: User },
   { title: "Security", url: "/security", icon: Shield },
+  { title: "SSH Keys", url: "/ssh-keys", icon: Terminal },
   { title: "Linked Accounts", url: "/linked-accounts", icon: Link2 },
   { title: "Activity", url: "/activity", icon: Activity },
 ];
@@ -48,6 +51,8 @@ const orgNavItems = [
 
 const adminNavItems = [
   { title: "OIDC Clients", url: "/org/clients", icon: Key },
+  { title: "Certificate Auth.", url: "/org/cas", icon: ShieldCheck },
+  // { title: "Users", url: "/admin/users", icon: Users },
   { title: "System Logs",  url: "/admin/audit", icon: ScrollText },
 ];
 

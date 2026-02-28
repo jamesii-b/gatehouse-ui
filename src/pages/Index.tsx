@@ -1,13 +1,20 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
-    // Redirect to login for now - will be replaced with auth check
-    navigate("/login");
-  }, [navigate]);
+    if (isLoading) return; // Wait for auth check to complete
+
+    if (isAuthenticated) {
+      navigate("/profile");
+    } else {
+      navigate("/login");
+    }
+  }, [isLoading, isAuthenticated, navigate]);
 
   return null;
 };

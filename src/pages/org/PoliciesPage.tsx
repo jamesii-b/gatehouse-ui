@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { api, OrgPolicyResponse, UpdateOrgPolicyDto, create403Handler } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useOrganizations } from "@/hooks/useOrganizations";
 
 const MFA_MODE_LABELS: Record<string, { label: string; description: string }> = {
   disabled: {
@@ -51,18 +52,13 @@ export default function PoliciesPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Fetch organizations to get current org
-  const { data: orgsData, isLoading: orgsLoading } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: () => api.users.organizations({
-      on403: create403Handler(toast),
-    }),
-  });
+  const { data: organizations, isLoading: orgsLoading } = useOrganizations();
 
   useEffect(() => {
-    if (orgsData?.organizations && orgsData.organizations.length > 0) {
-      setCurrentOrgId(orgsData.organizations[0].id);
+    if (organizations && organizations.length > 0) {
+      setCurrentOrgId(organizations[0].id);
     }
-  }, [orgsData]);
+  }, [organizations]);
 
   // Fetch org policy
   const { data: policy, isLoading: policyLoading } = useQuery({

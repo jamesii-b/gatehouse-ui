@@ -167,6 +167,25 @@ export interface LinkedAccountsResponse {
   unlink_available: boolean;
 }
 
+export interface PrincipalOption {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+export interface MyPrincipalsOrg {
+  org_id: string;
+  org_name: string;
+  role: string;
+  is_admin: boolean;
+  my_principals: PrincipalOption[];
+  all_principals: PrincipalOption[]; // populated for admin/owner only
+}
+
+export interface MyPrincipalsResponse {
+  orgs: MyPrincipalsOrg[];
+}
+
 export interface OAuthAuthorizeResponse {
   authorization_url: string;
   state: string;
@@ -392,6 +411,18 @@ export const api = {
         body: JSON.stringify({ email }),
       }, false),
 
+    activate: (activation_key: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/activate', {
+        method: 'POST',
+        body: JSON.stringify({ activation_key }),
+      }, false),
+
+    resendActivation: (email: string): Promise<{ message: string }> =>
+      request<{ message: string }>('/auth/resend-activation', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }, false),
+
     logout: async (): Promise<void> => {
       try {
         await request<void>('/auth/logout', {
@@ -416,6 +447,10 @@ export const api = {
 
     organizations: (requestConfig?: RequestConfig) =>
       request<OrganizationsResponse>('/users/me/organizations', {}, true, requestConfig),
+
+    // Get the current user's effective principals across all orgs
+    myPrincipals: (requestConfig?: RequestConfig) =>
+      request<MyPrincipalsResponse>('/users/me/principals', {}, true, requestConfig),
 
     // Password change can return 401 for wrong current password - don't clear token
     changePassword: (currentPassword: string, newPassword: string, newPasswordConfirm: string) =>
@@ -447,6 +482,19 @@ export const api = {
         true,
         requestConfig,
       ),
+
+    // List users visible to the calling admin
+    listUsers: (params?: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<{ users: User[]; count: number; page: number; per_page: number; pages: number }>(
+        `/admin/users${params ? '?' + new URLSearchParams(params).toString() : ''}`,
+        {},
+        true,
+        requestConfig,
+      ),
+
+    // Get a single user's profile + SSH keys (admin view)
+    getUser: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ user: User; ssh_keys: SSHKey[] }>(`/admin/users/${userId}`, {}, true, requestConfig),
   },
 
   totp: {
@@ -800,9 +848,8 @@ export const api = {
 
     // Link principal to department
     linkPrincipalToDepartment: (orgId: string, principalId: string, departmentId: string, requestConfig?: RequestConfig) =>
-      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/departments`, {
+      request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/departments/${departmentId}`, {
         method: 'POST',
-        body: JSON.stringify({ department_id: departmentId }),
       }, true, requestConfig),
 
     // Unlink principal from department
@@ -810,6 +857,14 @@ export const api = {
       request<{ message: string }>(`/organizations/${orgId}/principals/${principalId}/departments/${departmentId}`, {
         method: 'DELETE',
       }, true, requestConfig),
+
+    // Get departments linked to a principal
+    getPrincipalDepartments: (orgId: string, principalId: string, requestConfig?: RequestConfig) =>
+      request<{ departments: Department[]; count: number }>(`/organizations/${orgId}/principals/${principalId}/departments`, {}, true, requestConfig),
+
+    // Get principals linked to a department
+    getDepartmentPrincipals: (orgId: string, deptId: string, requestConfig?: RequestConfig) =>
+      request<{ principals: Principal[]; count: number }>(`/organizations/${orgId}/departments/${deptId}/principals`, {}, true, requestConfig),
 
     // Create invite token
     createInvite: (orgId: string, email: string, role: string, requestConfig?: RequestConfig) =>
@@ -840,6 +895,24 @@ export const api = {
       request<{ message: string }>(`/organizations/${orgId}/members/${userId}/send-mfa-reminder`, {
         method: 'POST',
       }, true, requestConfig),
+
+    // List Certificate Authorities for an org
+    getCAs: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ cas: OrgCA[]; count: number }>(`/organizations/${orgId}/cas`, {}, true, requestConfig),
+
+    // Create a new Certificate Authority for an org
+    createCA: (orgId: string, data: { name: string; description?: string; ca_type?: 'user' | 'host'; key_type?: 'ed25519' | 'rsa' | 'ecdsa'; default_cert_validity_hours?: number; max_cert_validity_hours?: number }, requestConfig?: RequestConfig) =>
+      request<{ ca: OrgCA }>(`/organizations/${orgId}/cas`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }, true, requestConfig),
+
+    // Update CA configuration
+    updateCA: (orgId: string, caId: string, data: { default_cert_validity_hours?: number; max_cert_validity_hours?: number }, requestConfig?: RequestConfig) =>
+      request<{ ca: OrgCA }>(`/organizations/${orgId}/cas/${caId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }, true, requestConfig),
   },
 
   invites: {
@@ -861,6 +934,93 @@ export const api = {
         },
         false,
       ),
+  },
+
+  ssh: {
+    // List all SSH keys for the current user
+    listKeys: (requestConfig?: RequestConfig) =>
+      request<SSHKeysResponse>('/ssh/keys', {}, true, requestConfig),
+
+    // Add a new SSH public key
+    addKey: (public_key: string, description?: string, requestConfig?: RequestConfig) =>
+      request<SSHKey>('/ssh/keys', {
+        method: 'POST',
+        body: JSON.stringify({ public_key, description }),
+      }, true, requestConfig),
+
+    // Delete an SSH key
+    deleteKey: (keyId: string, requestConfig?: RequestConfig) =>
+      request<{ status: string }>(`/ssh/keys/${keyId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Update SSH key description
+    updateKeyDescription: (keyId: string, description: string, requestConfig?: RequestConfig) =>
+      request<SSHKey>(`/ssh/keys/${keyId}/update-description`, {
+        method: 'PATCH',
+        body: JSON.stringify({ description }),
+      }, true, requestConfig),
+
+    // Get a verification challenge for a key
+    getChallenge: (keyId: string, requestConfig?: RequestConfig) =>
+      request<SSHChallengeResponse>(`/ssh/keys/${keyId}/verify`, {}, true, requestConfig),
+
+    // Submit signature to verify key ownership
+    verifyKey: (keyId: string, signature: string, requestConfig?: RequestConfig) =>
+      request<SSHVerifyResponse>(`/ssh/keys/${keyId}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ signature, action: 'verify_signature' }),
+      }, true, requestConfig),
+
+    // Sign a certificate for the given key
+    signCertificate: (key_id: string, principals?: string[], cert_type?: 'user' | 'host', expiry_hours?: number, requestConfig?: RequestConfig) =>
+      request<SSHSignResponse>('/ssh/sign', {
+        method: 'POST',
+        body: JSON.stringify({ key_id, principals, cert_type, expiry_hours }),
+      }, true, requestConfig),
+
+    // List issued certificates for the current user
+    listCertificates: (requestConfig?: RequestConfig) =>
+      request<{ certificates: SSHCertificate[]; count: number }>('/ssh/certificates', {}, true, requestConfig),
+
+    // Get a single certificate (includes full cert text)
+    getCertificate: (certId: string, requestConfig?: RequestConfig) =>
+      request<SSHCertificate>(`/ssh/certificates/${certId}`, {}, true, requestConfig),
+
+    // Revoke a certificate
+    revokeCertificate: (certId: string, reason?: string, requestConfig?: RequestConfig) =>
+      request<{ status: string; cert_id: string; reason: string }>(`/ssh/certificates/${certId}/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }, true, requestConfig),
+
+    // Get the CA public key for the current user's org
+    getCaPublicKey: (requestConfig?: RequestConfig) =>
+      request<{ public_key: string; fingerprint: string; ca_name: string; source: string }>('/ssh/ca/public-key', {}, true, requestConfig),
+
+    // Add SSH key on behalf of another user (admin)
+    adminAddKey: (userId: string, public_key: string, description?: string, requestConfig?: RequestConfig) =>
+      request<SSHKey>(`/ssh/keys/admin/${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({ public_key, description }),
+      }, true, requestConfig),
+
+    // List CA permissions for a CA
+    listCaPermissions: (caId: string, requestConfig?: RequestConfig) =>
+      request<{ ca_id: string; permissions: CAPermission[]; open_to_all: boolean }>(`/ssh/ca/${caId}/permissions`, {}, true, requestConfig),
+
+    // Grant a user permission on a CA
+    addCaPermission: (caId: string, user_id: string, permission: 'sign' | 'admin', requestConfig?: RequestConfig) =>
+      request<{ message: string; permission: CAPermission }>(`/ssh/ca/${caId}/permissions`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id, permission }),
+      }, true, requestConfig),
+
+    // Revoke a user's CA permission
+    removeCaPermission: (caId: string, userId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/ssh/ca/${caId}/permissions/${userId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
   },
 };
 
@@ -989,6 +1149,88 @@ export interface OrgComplianceMember {
 }
 
 export { ApiError };
+
+// SSH Key types
+export interface SSHKey {
+  id: string;
+  user_id: string;
+  public_key: string;
+  description: string | null;
+  key_type: string | null;
+  fingerprint: string | null;
+  verified: boolean;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SSHKeysResponse {
+  keys: SSHKey[];
+  count: number;
+}
+
+export interface SSHChallengeResponse {
+  challenge_text: string;
+  validationText: string;
+  key_id: string;
+}
+
+export interface SSHVerifyResponse {
+  verified: boolean;
+}
+
+export interface SSHCertificate {
+  id: string;
+  user_id: string;
+  ssh_key_id: string | null;
+  certificate: string;
+  serial: number | null;
+  key_id: string | null;
+  cert_type: string;
+  principals: string[];
+  valid_after: string;
+  valid_before: string;
+  revoked: boolean;
+  status: string;
+  created_at: string;
+}
+
+export interface SSHSignResponse {
+  certificate: string;
+  serial: number;
+  principals: string[];
+  valid_after: string;
+  valid_before: string;
+  cert_id?: string;
+}
+
+export interface CAPermission {
+  id: string;
+  ca_id: string;
+  user_id: string;
+  user_email: string | null;
+  permission: 'sign' | 'admin';
+  created_at: string;
+}
+
+export interface OrgCA {
+  id: string;
+  organization_id: string | null;
+  name: string;
+  description: string | null;
+  ca_type: 'user' | 'host';
+  key_type: string;
+  public_key: string;
+  fingerprint: string;
+  is_active: boolean;
+  default_cert_validity_hours: number;
+  max_cert_validity_hours: number;
+  total_certs: number;
+  active_certs: number;
+  revoked_certs: number;
+  created_at: string;
+  updated_at: string;
+}
 
 // Reusable 403 error handler for API calls
 // Shows a user-friendly toast message when access is denied

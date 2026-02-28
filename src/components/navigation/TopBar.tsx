@@ -19,15 +19,11 @@ import { ComplianceBanner } from "@/components/auth/ComplianceBanner";
 
 export function TopBar() {
   const navigate = useNavigate();
-  const { user, isAuthenticated, mfaCompliance } = useAuth();
+  const { user, isAuthenticated, mfaCompliance, logout } = useAuth();
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null);
   
   // Use React Query hook for organizations with automatic caching and deduplication
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
-
-  // Debug logging
-  console.log('[TopBar] organizations data:', organizations);
-  console.log('[TopBar] organizations is array:', Array.isArray(organizations));
 
   // Ensure organizations is always an array (defensive check)
   const organizationsArray = Array.isArray(organizations) ? organizations : [];
@@ -39,8 +35,8 @@ export function TopBar() {
     }
   }, [organizationsArray, currentOrg]);
 
-  const handleLogout = () => {
-    navigate("/login");
+  const handleLogout = async () => {
+    await logout();
   };
 
   const userInitials = user?.full_name
