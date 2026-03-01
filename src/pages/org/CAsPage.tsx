@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Shield,
   ShieldAlert,
@@ -7,13 +7,13 @@ import {
   Loader2,
   Terminal,
   Plus,
-  Trash2,
-  Users,
-  Lock,
   User,
   Server,
   Settings,
   AlertCircle,
+  ServerCog,
+  RefreshCw,
+  ShieldOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useParams } from "react-router-dom";
 import { useCurrentOrganizationId } from "@/hooks/useCurrentOrganization";
-import { api, OrgCA, CAPermission, ApiError } from "@/lib/api";
+import { api, OrgCA, ApiError } from "@/lib/api";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -82,200 +82,18 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-
-interface PermissionsCardProps {
-  ca: OrgCA;
-}
-
-function PermissionsCard({ ca }: PermissionsCardProps) {
-  const { toast } = useToast();
-  const [perms, setPerms] = useState<CAPermission[]>([]);
-  const [openToAll, setOpenToAll] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [addEmail, setAddEmail] = useState("");
-  const [addPermission, setAddPermission] = useState<"sign" | "admin">("sign");
-  const [isAdding, setIsAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
-  const [isRemoving, setIsRemoving] = useState(false);
-
-  const fetchPerms = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.ssh.listCaPermissions(ca.id);
-      setPerms(data.permissions);
-      setOpenToAll(data.open_to_all);
-    } catch {
-      // non-fatal
-    } finally {
-      setIsLoading(false);
-    }
-  }, [ca.id]);
-
-  useEffect(() => { fetchPerms(); }, [fetchPerms]);
-
-  const handleAdd = async () => {
-    setAddError(null);
-    if (!addEmail.trim()) { setAddError("Email is required"); return; }
-    setIsAdding(true);
-    try {
-      // Resolve user_id from email via org members search
-      // We pass the email as user_id — the backend expects a user UUID.
-      // To keep it simple, we pass the email; if the backend doesn't support
-      // lookup by email, the admin must use the user UUID directly.
-      await api.ssh.addCaPermission(ca.id, addEmail.trim(), addPermission);
-      toast({ title: "Permission granted" });
-      setShowAdd(false);
-      setAddEmail("");
-      fetchPerms();
-    } catch (err) {
-      setAddError(err instanceof ApiError ? err.message : "Failed to add permission");
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleRemove = async () => {
-    if (!removingUserId) return;
-    setIsRemoving(true);
-    try {
-      await api.ssh.removeCaPermission(ca.id, removingUserId);
-      setPerms((prev) => prev.filter((p) => p.user_id !== removingUserId));
-      toast({ title: "Permission revoked" });
-    } catch (err) {
-      toast({ variant: "destructive", title: "Failed to revoke permission", description: err instanceof ApiError ? err.message : "" });
-    } finally {
-      setIsRemoving(false);
-      setRemovingUserId(null);
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Access Control
-            </CardTitle>
-            <CardDescription className="text-xs mt-0.5">
-              {openToAll
-                ? "Open to all org members — add users below to restrict access"
-                : "Restricted — only listed users may sign certificates"}
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
-            <Plus className="w-3 h-3 mr-1" />
-            Add user
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-        ) : perms.length === 0 ? (
-          <div className="text-center py-4 text-muted-foreground text-sm">
-            <Lock className="w-6 h-6 mx-auto mb-2 opacity-40" />
-            {openToAll ? "No restrictions — all org members can sign" : "No users granted access"}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {perms.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-2 border rounded-lg text-sm">
-                <div>
-                  <p className="font-medium">{p.user_email ?? p.user_id}</p>
-                  <Badge variant="secondary" className="text-xs mt-0.5">{p.permission}</Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => setRemovingUserId(p.user_id)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-
-      {/* Add permission dialog */}
-      <Dialog open={showAdd} onOpenChange={(o) => { setShowAdd(o); setAddError(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Grant CA Access</DialogTitle>
-            <DialogDescription>
-              Enter the user ID (UUID) to grant permission on <strong>{ca.name}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {addError && <div className="p-2 rounded bg-destructive/10 text-destructive text-xs">{addError}</div>}
-            <div className="space-y-1">
-              <Label className="text-xs">User ID</Label>
-              <Input placeholder="uuid..." value={addEmail} onChange={(e) => setAddEmail(e.target.value)} disabled={isAdding} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Permission</Label>
-              <Select value={addPermission} onValueChange={(v) => setAddPermission(v as "sign" | "admin")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sign">sign — can request certificates</SelectItem>
-                  <SelectItem value="admin">admin — can sign + manage CA</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)} disabled={isAdding}>Cancel</Button>
-            <Button onClick={handleAdd} disabled={isAdding || !addEmail.trim()}>
-              {isAdding && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Grant
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Confirm revoke */}
-      <AlertDialog open={!!removingUserId} onOpenChange={() => setRemovingUserId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke access?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the user's permission to sign certificates with this CA.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRemove}
-              disabled={isRemoving}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isRemoving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Revoke
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
-  );
-}
-
 // ─── CA Detail Card ───────────────────────────────────────────────────────────
 
 interface CADetailCardProps {
   ca: OrgCA;
   onEdit: (ca: OrgCA) => void;
+  onRotate: (ca: OrgCA) => void;
+  onDelete: (ca: OrgCA) => void;
 }
 
-function CADetailCard({ ca, onEdit }: CADetailCardProps) {
+function CADetailCard({ ca, onEdit, onRotate, onDelete }: CADetailCardProps) {
   const isUser = ca.ca_type === "user";
+  const isSystem = !!ca.is_system;
   const sshConfig = isUser
     ? `# /etc/ssh/sshd_config:\nTrustedUserCAKeys /etc/ssh/trusted_user_ca_keys\n\n# Add public key:\necho '${ca.public_key.trim()}' \\\n  >> /etc/ssh/trusted_user_ca_keys`
     : `# /etc/ssh/sshd_config:\nHostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub\n\n# Add to known_hosts (clients):\n@cert-authority * ${ca.public_key.trim()}`;
@@ -287,9 +105,14 @@ function CADetailCard({ ca, onEdit }: CADetailCardProps) {
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
-                {isUser ? <User className="w-4 h-4" /> : <Server className="w-4 h-4" />}
+                {isSystem ? <ServerCog className="w-4 h-4" /> : isUser ? <User className="w-4 h-4" /> : <Server className="w-4 h-4" />}
                 {ca.name}
-                {ca.is_active ? (
+                {isSystem ? (
+                  <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                    <ServerCog className="w-3 h-3" />
+                    System
+                  </Badge>
+                ) : ca.is_active ? (
                   <Badge className="bg-green-500/10 text-green-600 border-0 text-xs">Active</Badge>
                 ) : (
                   <Badge variant="secondary" className="text-xs">Inactive</Badge>
@@ -303,21 +126,23 @@ function CADetailCard({ ca, onEdit }: CADetailCardProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="p-2 bg-muted rounded-lg">
-              <p className="text-lg font-semibold">{ca.active_certs}</p>
-              <p className="text-xs text-muted-foreground">Active certs</p>
+          {/* Stats — hidden for system CAs (we have no cert records for them) */}
+          {!isSystem && (
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="p-2 bg-muted rounded-lg">
+                <p className="text-lg font-semibold">{ca.active_certs}</p>
+                <p className="text-xs text-muted-foreground">Active certs</p>
+              </div>
+              <div className="p-2 bg-muted rounded-lg">
+                <p className="text-lg font-semibold">{ca.total_certs}</p>
+                <p className="text-xs text-muted-foreground">Total issued</p>
+              </div>
+              <div className="p-2 bg-muted rounded-lg">
+                <p className="text-lg font-semibold">{ca.default_cert_validity_hours}h</p>
+                <p className="text-xs text-muted-foreground">Default validity</p>
+              </div>
             </div>
-            <div className="p-2 bg-muted rounded-lg">
-              <p className="text-lg font-semibold">{ca.total_certs}</p>
-              <p className="text-xs text-muted-foreground">Total issued</p>
-            </div>
-            <div className="p-2 bg-muted rounded-lg">
-              <p className="text-lg font-semibold">{ca.default_cert_validity_hours}h</p>
-              <p className="text-xs text-muted-foreground">Default validity</p>
-            </div>
-          </div>
+          )}
 
           {/* Fingerprint */}
           <div>
@@ -343,19 +168,41 @@ function CADetailCard({ ca, onEdit }: CADetailCardProps) {
             <pre className="text-xs font-mono whitespace-pre-wrap break-all">{sshConfig}</pre>
           </div>
 
-          <p className="text-xs text-muted-foreground">Created {formatDate(ca.created_at)}</p>
+          {ca.created_at && (
+            <p className="text-xs text-muted-foreground">Created {formatDate(ca.created_at)}</p>
+          )}
+          {ca.rotated_at && (
+            <p className="text-xs text-muted-foreground">
+              Key rotated {formatDate(ca.rotated_at)}
+              {ca.rotation_reason && <> — {ca.rotation_reason}</>}
+            </p>
+          )}
 
-          <div className="pt-2 border-t">
-            <Button variant="outline" size="sm" onClick={() => onEdit(ca)} className="w-full">
-              <Settings className="w-3 h-3 mr-2" />
-              Edit Configuration
-            </Button>
-          </div>
+          {!isSystem && (
+            <div className="pt-2 border-t space-y-2">
+              <Button variant="outline" size="sm" onClick={() => onEdit(ca)} className="w-full">
+                <Settings className="w-3 h-3 mr-2" />
+                Edit Configuration
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" size="sm" onClick={() => onRotate(ca)} className="w-full">
+                  <RefreshCw className="w-3 h-3 mr-2" />
+                  Rotate Key
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onDelete(ca)}
+                  className="w-full text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60"
+                >
+                  <ShieldOff className="w-3 h-3 mr-2" />
+                  Delete CA
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {/* Permissions — user CAs only */}
-      {isUser && <PermissionsCard ca={ca} />}
     </div>
   );
 }
@@ -367,15 +214,18 @@ interface CASectionProps {
   ca: OrgCA | null;
   onCreateClick: (caType: "user" | "host") => void;
   onEdit: (ca: OrgCA) => void;
+  onRotate: (ca: OrgCA) => void;
+  onDelete: (ca: OrgCA) => void;
 }
 
-function CASection({ caType, ca, onCreateClick, onEdit }: CASectionProps) {
+function CASection({ caType, ca, onCreateClick, onEdit, onRotate, onDelete }: CASectionProps) {
   const isUser = caType === "user";
   const title = isUser ? "User Signing Key" : "Host Signing Key";
   const subtitle = isUser
     ? "Signs SSH user certificates so users can authenticate to servers."
     : "Signs SSH host certificates so clients can verify server identity.";
   const Icon = isUser ? User : Server;
+  const isSystem = !!ca?.is_system;
 
   return (
     <div className="space-y-3">
@@ -383,7 +233,14 @@ function CASection({ caType, ca, onCreateClick, onEdit }: CASectionProps) {
         <Icon className="w-4 h-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold">{title}</h2>
         {ca ? (
-          <Badge className="bg-green-500/10 text-green-600 border-0 text-xs">Configured</Badge>
+          isSystem ? (
+            <Badge variant="secondary" className="text-xs flex items-center gap-1">
+              <ServerCog className="w-3 h-3" />
+              System (read-only)
+            </Badge>
+          ) : (
+            <Badge className="bg-green-500/10 text-green-600 border-0 text-xs">Configured</Badge>
+          )
         ) : (
           <Badge variant="secondary" className="text-xs flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
@@ -393,7 +250,27 @@ function CASection({ caType, ca, onCreateClick, onEdit }: CASectionProps) {
       </div>
 
       {ca ? (
-        <CADetailCard ca={ca} onEdit={onEdit} />
+        <>
+          <CADetailCard ca={ca} onEdit={onEdit} onRotate={onRotate} onDelete={onDelete} />
+          {/* When only a system CA is present, offer to generate a managed replacement */}
+          {isSystem && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-300">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold mb-1">Using server-configured CA</p>
+                <p>
+                  Certificates are being signed by a CA key loaded from the server configuration,
+                  not managed through this UI. Generate a managed key below to take full control
+                  of certificate issuance from Gatehouse.
+                </p>
+              </div>
+              <Button onClick={() => onCreateClick(caType)} size="sm" variant="outline" className="flex-shrink-0">
+                <Plus className="w-3 h-3 mr-1" />
+                Generate managed key
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center py-10 text-muted-foreground">
@@ -444,6 +321,19 @@ export default function CAsPage() {
   });
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Rotate CA dialog
+  const [rotatingCA, setRotatingCA] = useState<OrgCA | null>(null);
+  const [isRotateDialogOpen, setIsRotateDialogOpen] = useState(false);
+  const [rotateKeyType, setRotateKeyType] = useState<"ed25519" | "rsa" | "ecdsa">("ed25519");
+  const [rotateReason, setRotateReason] = useState("");
+  const [isRotating, setIsRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+
+  // Delete CA dialog
+  const [deletingCA, setDeletingCA] = useState<OrgCA | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!orgId) { setIsLoading(false); return; }
@@ -549,7 +439,59 @@ export default function CAsPage() {
     }
   };
 
-  return (
+  // ── Rotate handlers ──
+  const handleRotateCA = (ca: OrgCA) => {
+    setRotatingCA(ca);
+    setRotateKeyType((ca.key_type as "ed25519" | "rsa" | "ecdsa") || "ed25519");
+    setRotateReason("");
+    setRotateError(null);
+    setIsRotateDialogOpen(true);
+  };
+
+  const handleConfirmRotate = async () => {
+    if (!orgId || !rotatingCA) return;
+    setIsRotating(true);
+    setRotateError(null);
+    try {
+      const result = await api.organizations.rotateCA(orgId, rotatingCA.id, {
+        key_type: rotateKeyType,
+        reason: rotateReason.trim() || undefined,
+      });
+      setCAs(cas.map((ca) => (ca.id === rotatingCA.id ? result.ca : ca)));
+      setIsRotateDialogOpen(false);
+      setRotatingCA(null);
+      toast({
+        title: "CA key rotated successfully",
+        description: `Old fingerprint: ${result.old_fingerprint}. Update TrustedUserCAKeys / known_hosts on your servers.`,
+      });
+    } catch (err) {
+      setRotateError(err instanceof ApiError ? err.message : "Failed to rotate CA key");
+    } finally {
+      setIsRotating(false);
+    }
+  };
+
+  // ── Delete handlers ──
+  const handleDeleteCA = (ca: OrgCA) => {
+    setDeletingCA(ca);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!orgId || !deletingCA) return;
+    setIsDeleting(true);
+    try {
+      await api.organizations.deleteCA(orgId, deletingCA.id);
+      setCAs(cas.filter((ca) => ca.id !== deletingCA.id));
+      setIsDeleteDialogOpen(false);
+      setDeletingCA(null);
+      toast({ title: "CA deleted", description: "Existing certificates remain valid until they expire." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed to delete CA", description: err instanceof ApiError ? err.message : "" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };  return (
     <div className="page-container">
       <div className="page-header">
         <div>
@@ -566,9 +508,9 @@ export default function CAsPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          <CASection caType="user" ca={userCA} onCreateClick={handleOpenCreate} onEdit={handleEditCA} />
+          <CASection caType="user" ca={userCA} onCreateClick={handleOpenCreate} onEdit={handleEditCA} onRotate={handleRotateCA} onDelete={handleDeleteCA} />
           <div className="border-t" />
-          <CASection caType="host" ca={hostCA} onCreateClick={handleOpenCreate} onEdit={handleEditCA} />
+          <CASection caType="host" ca={hostCA} onCreateClick={handleOpenCreate} onEdit={handleEditCA} onRotate={handleRotateCA} onDelete={handleDeleteCA} />
         </div>
       )}
 
@@ -722,7 +664,118 @@ export default function CAsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Rotate CA Dialog ── */}
+      <Dialog open={isRotateDialogOpen} onOpenChange={(open) => { setIsRotateDialogOpen(open); if (!open) setRotateError(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Rotate CA Key
+            </DialogTitle>
+            <DialogDescription>
+              Generate a new key pair for <strong>{rotatingCA?.name}</strong>.
+              Previously-issued certificates remain valid until they expire, but all new
+              certificates will be signed with the new key. You must update
+              {rotatingCA?.ca_type === "user"
+                ? " TrustedUserCAKeys on your SSH servers"
+                : " @cert-authority in client known_hosts files"} after rotation.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {rotateError && (
+              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{rotateError}</span>
+              </div>
+            )}
+
+            {rotatingCA && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300">
+                <p className="font-semibold mb-1">⚠ Important</p>
+                <p>
+                  Current fingerprint: <code className="font-mono">{rotatingCA.fingerprint}</code>
+                </p>
+                <p className="mt-1">
+                  After rotation, you <strong>must</strong> replace this fingerprint on every server /
+                  client that trusts this CA. Until updated, new certificates won't be accepted.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="rotate-key-type">New Key Algorithm</Label>
+              <Select
+                value={rotateKeyType}
+                onValueChange={(v) => setRotateKeyType(v as "ed25519" | "rsa" | "ecdsa")}
+                disabled={isRotating}
+              >
+                <SelectTrigger id="rotate-key-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ed25519">Ed25519 (recommended)</SelectItem>
+                  <SelectItem value="ecdsa">ECDSA (P-521)</SelectItem>
+                  <SelectItem value="rsa">RSA-4096</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rotate-reason">Reason (optional)</Label>
+              <Input
+                id="rotate-reason"
+                placeholder="e.g. Suspected key compromise, Scheduled rotation"
+                value={rotateReason}
+                onChange={(e) => setRotateReason(e.target.value)}
+                disabled={isRotating}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRotateDialogOpen(false)} disabled={isRotating}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmRotate} disabled={isRotating} variant="destructive">
+              {isRotating ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Rotating…</>
+              ) : (
+                <><RefreshCw className="w-4 h-4 mr-2" />Rotate Key</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete CA Confirmation ── */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Certificate Authority?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently deactivate <strong>{deletingCA?.name}</strong>.
+              No new certificates can be signed with this CA after deletion.
+              Existing certificates remain valid until they expire.
+              {deletingCA?.active_certs ? (
+                <span className="block mt-2 font-semibold text-amber-600 dark:text-amber-400">
+                  ⚠ This CA has {deletingCA.active_certs} active certificate{deletingCA.active_certs !== 1 ? "s" : ""}.
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete CA
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
