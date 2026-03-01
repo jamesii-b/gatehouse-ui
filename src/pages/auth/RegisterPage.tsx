@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Mail, Lock, User, ArrowRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
 import { BannerAlert } from "@/components/auth/BannerAlert";
+import { api, ApiError } from "@/lib/api";
 
 type RegistrationState = "form" | "success" | "disabled";
 
 export default function RegisterPage() {
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,22 +42,25 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
-    // Mock registration - will be replaced with actual API call
-    // POST /api/auth/register
-    setTimeout(() => {
-      setIsLoading(false);
-      
-      // Simulate different responses
-      const mockResponse = "success" as RegistrationState | "error";
-      
-      if (mockResponse === "disabled") {
-        setState("disabled");
-      } else if (mockResponse === "error") {
-        setError("An error occurred. Please try again.");
+    try {
+      await api.auth.register(email, password, name.trim() || undefined);
+      // Show "check your email" — verification email was sent
+      setState("success");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === 409) {
+          setError("An account with this email already exists.");
+        } else if (err.code === 403 || (err.message && err.message.toLowerCase().includes("disabled"))) {
+          setState("disabled");
+        } else {
+          setError(err.message || "An error occurred. Please try again.");
+        }
       } else {
-        setState("success");
+        setError("An error occurred. Please try again.");
       }
-    }, 1000);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Registration disabled state

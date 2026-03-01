@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BannerAlert } from "@/components/auth/BannerAlert";
+import { api, ApiError } from "@/lib/api";
 
 type VerificationState = "verifying" | "success" | "error" | "resend";
 
@@ -22,21 +23,20 @@ export default function VerifyEmailPage() {
     if (token && state === "verifying") {
       verifyToken(token);
     }
-  }, [token, state]);
+  }, [token]);
 
   const verifyToken = async (verificationToken: string) => {
-    // Mock verification - POST /api/auth/verify-email?token=...
-    setTimeout(() => {
-      // Simulate different responses
-      const mockSuccess = Math.random() > 0.3; // 70% success rate for demo
-      
-      if (mockSuccess) {
-        setState("success");
+    try {
+      await api.auth.verifyEmail(verificationToken);
+      setState("success");
+    } catch (err) {
+      setState("error");
+      if (err instanceof ApiError) {
+        setErrorMessage(err.message || "This verification link has expired or is invalid.");
       } else {
-        setState("error");
         setErrorMessage("This verification link has expired or is invalid.");
       }
-    }, 1500);
+    }
   };
 
   const handleResendVerification = async (e: React.FormEvent) => {
@@ -44,11 +44,14 @@ export default function VerifyEmailPage() {
     setIsResending(true);
     setResendSuccess(false);
 
-    // Mock resend - POST /api/auth/request-email-verification
-    setTimeout(() => {
+    try {
+      await api.auth.resendVerification(resendEmail);
+    } catch {
+      // Always show success to avoid leaking account existence
+    } finally {
       setIsResending(false);
       setResendSuccess(true);
-    }, 1000);
+    }
   };
 
   // Loading / Verifying state

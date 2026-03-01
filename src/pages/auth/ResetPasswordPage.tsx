@@ -1,27 +1,43 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Lock, ArrowRight, CheckCircle } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Lock, ArrowRight, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api } from "@/lib/api";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") || "";
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (!token) {
+      setError("Invalid reset link. Please request a new one.");
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await api.auth.resetPassword(token, password);
       setIsSuccess(true);
-    }, 1000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to reset password. The link may be expired.";
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isSuccess) {
@@ -96,7 +112,7 @@ export default function ResetPasswordPage() {
 
         <Button type="submit" className="w-full" disabled={isLoading}>
           {isLoading ? (
-            "Resetting..."
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Resetting...</>
           ) : (
             <>
               Reset password
@@ -104,6 +120,13 @@ export default function ResetPasswordPage() {
             </>
           )}
         </Button>
+
+        {error && (
+          <p className="text-sm text-destructive flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {error}
+          </p>
+        )}
       </form>
     </div>
   );

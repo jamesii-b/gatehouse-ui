@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BannerAlert } from "@/components/auth/BannerAlert";
+import { api } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -15,11 +16,14 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Mock API call - POST /api/auth/forgot-password
-    setTimeout(() => {
+    try {
+      await api.auth.forgotPassword(email);
+    } catch {
+      // Always show success to avoid leaking account existence
+    } finally {
       setIsLoading(false);
       setIsSubmitted(true);
-    }, 1000);
+    }
   };
 
   // Success state - always show neutral message (don't leak account existence)

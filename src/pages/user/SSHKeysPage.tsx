@@ -13,6 +13,7 @@ import {
   Pencil,
   ShieldOff,
   Server,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +47,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { api, SSHKey, SSHCertificate, ApiError, PrincipalOption, MyPrincipalsOrg } from "@/lib/api";
+import { api, SSHKey, SSHCertificate, ApiError, PrincipalOption, MyPrincipalsOrg, DeptCertPolicy } from "@/lib/api";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -124,6 +125,7 @@ export default function SSHKeysPage() {
   const [signError, setSignError] = useState<string | null>(null);
   const [certType, setCertType] = useState<'user' | 'host'>('user');
   const [expiryHours, setExpiryHours] = useState<string>('');
+  const [deptCertPolicy, setDeptCertPolicy] = useState<DeptCertPolicy | null>(null);
 
   // Principal selection (populated when sign dialog opens)
   const [principalOrgs, setPrincipalOrgs] = useState<MyPrincipalsOrg[]>([]);
@@ -314,7 +316,13 @@ export default function SSHKeysPage() {
     setIsAdminMode(false);
     setCertType('user');
     setExpiryHours('');
+    setDeptCertPolicy(null);
     setIsLoadingPrincipals(true);
+
+    // Fetch dept cert policy in parallel
+    api.ssh.getMyDeptCertPolicy().then((data) => {
+      setDeptCertPolicy(data.policy);
+    }).catch(() => {/* non-fatal */});
 
     try {
       const data = await api.users.myPrincipals();
@@ -961,22 +969,65 @@ cat /tmp/challenge.txt.sig | base64 -w0`}
                 </div>
               )}
 
-              {/* Expiry hours override */}
+              {/* Expiry — controlled by dept cert policy */}
               <div className="space-y-1.5">
-                <Label htmlFor="expiry-hours" className="text-sm font-medium">
-                  Validity (hours){' '}
-                  <span className="text-muted-foreground font-normal">(optional — leave blank to use CA default)</span>
+                <Label htmlFor="expiry-hours" className="text-sm font-medium flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  Validity (hours)
                 </Label>
-                <Input
-                  id="expiry-hours"
-                  type="number"
-                  min={1}
-                  placeholder="e.g. 8"
-                  value={expiryHours}
-                  onChange={(e) => setExpiryHours(e.target.value)}
-                  className="w-36"
-                />
+                {deptCertPolicy?.allow_user_expiry ? (
+                  <div className="space-y-1">
+                    <Input
+                      id="expiry-hours"
+                      type="number"
+                      min={1}
+                      max={deptCertPolicy.max_expiry_hours}
+                      placeholder={`Default: ${deptCertPolicy.default_expiry_hours}h`}
+                      value={expiryHours}
+                      onChange={(e) => setExpiryHours(e.target.value)}
+                      className="w-40"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {isAdminMode
+                        ? deptCertPolicy.max_expiry_hours < 8760
+                          ? <>Capped at <strong>{deptCertPolicy.max_expiry_hours}h</strong> by department policy. Leave blank for default ({deptCertPolicy.default_expiry_hours}h).</>
+                          : <>Leave blank to use default ({deptCertPolicy.default_expiry_hours}h).</>
+                        : <>Max allowed: <strong>{deptCertPolicy.max_expiry_hours}h</strong>. Leave blank for default ({deptCertPolicy.default_expiry_hours}h).</>
+                      }
+                    </p>
+                  </div>
+                ) : deptCertPolicy ? (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    <span>Expiry set by policy: <strong>{deptCertPolicy.default_expiry_hours} hours</strong></span>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Input
+                      id="expiry-hours"
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 8"
+                      value={expiryHours}
+                      onChange={(e) => setExpiryHours(e.target.value)}
+                      className="w-36"
+                    />
+                    <p className="text-xs text-muted-foreground">Leave blank to use CA default.</p>
+                  </div>
+                )}
               </div>
+
+              {/* Extensions granted (informational) */}
+              {deptCertPolicy && deptCertPolicy.all_extensions?.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Extensions granted</Label>
+                  <div className="flex flex-wrap gap-1">
+                    {deptCertPolicy.all_extensions?.map((ext) => (
+                      <Badge key={ext} variant="secondary" className="text-xs font-mono">{ext}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3 py-2">

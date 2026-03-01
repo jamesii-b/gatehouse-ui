@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { LogIn, LogOut, Key, Fingerprint, Smartphone, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { LogIn, LogOut, Key, Fingerprint, Smartphone, AlertTriangle, Loader2, RefreshCw, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, AuditLogEntry } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Map audit log action strings to display info
 const getEventDisplay = (action: string) => {
@@ -31,7 +33,9 @@ const getEventDisplay = (action: string) => {
 };
 
 export default function ActivityPage() {
+  const { isOrgAdmin } = useAuth();
   const [filter, setFilter] = useState("all");
+  const [view, setView] = useState<"mine" | "org">("mine");
   const [events, setEvents] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,15 +43,18 @@ export default function ActivityPage() {
   const loadEvents = () => {
     setIsLoading(true);
     setError("");
-    api.users.auditLogs({ per_page: "50" })
-      .then((data) => {
-        setEvents(data.audit_logs ?? []);
-      })
+    const req =
+      view === "org" && isOrgAdmin
+        ? api.admin.getAuditLogs({ per_page: "100" }).then((d) => d.audit_logs ?? [])
+        : api.users.auditLogs({ per_page: "50" }).then((d) => d.audit_logs ?? []);
+
+    req
+      .then((logs) => setEvents(logs))
       .catch(() => setError("Failed to load activity. Please try again."))
       .finally(() => setIsLoading(false));
   };
 
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { loadEvents(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -75,12 +82,23 @@ export default function ActivityPage() {
         <div>
           <h1 className="page-title">Activity</h1>
           <p className="page-description">
-            Your recent account activity and security events
+            {view === "org" ? "Organization-wide audit log" : "Your recent account activity and security events"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isOrgAdmin && (
+            <Tabs value={view} onValueChange={(v) => setView(v as "mine" | "org")}>
+              <TabsList>
+                <TabsTrigger value="mine">My Activity</TabsTrigger>
+                <TabsTrigger value="org">
+                  <Users className="w-3.5 h-3.5 mr-1" />
+                  Org Logs
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Filter events" />
             </SelectTrigger>
             <SelectContent>
@@ -137,6 +155,9 @@ export default function ActivityPage() {
                         )}
                       </div>
                       <div className="mt-1 text-sm text-muted-foreground space-y-0.5">
+                        {view === "org" && event.user_id && (
+                          <p className="font-medium text-xs text-foreground/70">User: {event.user_id}</p>
+                        )}
                         {event.description && <p>{event.description}</p>}
                         <div className="flex items-center gap-2 flex-wrap">
                           {event.ip_address && (

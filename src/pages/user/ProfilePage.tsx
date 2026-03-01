@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mail, Building2, Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Mail, Upload, CheckCircle, AlertCircle, Loader2, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,8 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, Organization, ApiError } from "@/lib/api";
-import { useOrganizations } from "@/hooks/useOrganizations";
+import { api, ApiError, PendingInvite } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 function ProfileSkeleton() {
@@ -52,18 +51,6 @@ function ProfileSkeleton() {
             <Skeleton className="h-12 w-full" />
           </CardContent>
         </Card>
-
-        {/* Organizations Skeleton */}
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-5 w-28" />
-            <Skeleton className="h-4 w-48 mt-1" />
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
@@ -74,16 +61,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
-  // Use React Query hook for organizations with automatic caching and deduplication
-  const { data: organizations = [], isLoading: orgsLoading, error: orgsError } = useOrganizations();
-
-  // Debug logging
-  console.log('[ProfilePage] organizations data:', organizations);
-  console.log('[ProfilePage] organizations is array:', Array.isArray(organizations));
-
-  // Ensure organizations is always an array (defensive check)
-  const organizationsArray = Array.isArray(organizations) ? organizations : [];
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
 
   // Sync local name state with user data
   useEffect(() => {
@@ -92,16 +70,13 @@ export default function ProfilePage() {
     }
   }, [user?.full_name]);
 
-  // Handle 403 errors for organizations
+  // Fetch pending invitations for this user
   useEffect(() => {
-    if (orgsError instanceof ApiError && orgsError.code === 403) {
-      toast({
-        title: "Access Denied",
-        description: "You don't have permission to view organizations. Please contact your organization administrator.",
-        variant: "destructive",
-      });
-    }
-  }, [orgsError]);
+    if (!user) return;
+    api.users.getMyInvites()
+      .then((res) => setPendingInvites(res.invites ?? []))
+      .catch(() => { /* silently ignore */ });
+  }, [user]);
 
   const getInitials = (fullName: string | null) => {
     if (!fullName) return "?";
@@ -159,11 +134,39 @@ export default function ProfilePage() {
       <div className="page-header">
         <h1 className="page-title">Profile</h1>
         <p className="page-description">
-          Manage your personal information and organization memberships
+          Manage your personal information and account settings
         </p>
       </div>
 
       <div className="space-y-6">
+        {/* Pending Invitations Banner */}
+        {pendingInvites.length > 0 && (
+          <div className="rounded-lg border border-primary/40 bg-primary/10 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-primary font-semibold text-sm">
+              <Bell className="w-4 h-4" />
+              You have {pendingInvites.length} pending invitation{pendingInvites.length > 1 ? "s" : ""}
+            </div>
+            {pendingInvites.map((invite) => (
+              <div
+                key={invite.token}
+                className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">{invite.organization.name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    Invited as <span className="font-medium">{invite.role}</span>
+                  </p>
+                </div>
+                <a
+                  href={`/invite?token=${invite.token}`}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Accept →
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
         {/* Profile Photo & Name */}
         <Card>
           <CardHeader>
@@ -245,59 +248,6 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Organizations */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Organizations</CardTitle>
-            <CardDescription>Organizations you're a member of</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {orgsLoading ? (
-              <div className="space-y-2">
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-full" />
-              </div>
-            ) : organizationsArray.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                You're not a member of any organizations yet.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {organizationsArray.map((org) => (
-                  <div
-                    key={org.id}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      {org.logo_url ? (
-                        <Avatar className="w-8 h-8">
-                          <AvatarImage src={org.logo_url} />
-                          <AvatarFallback>
-                            <Building2 className="w-4 h-4 text-primary" />
-                          </AvatarFallback>
-                        </Avatar>
-                      ) : (
-                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center">
-                          <Building2 className="w-4 h-4 text-primary" />
-                        </div>
-                      )}
-                      <span className="text-foreground font-medium">{org.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {(org.role === 'owner' || org.role === 'admin') && (
-                        <Badge variant="default" className="bg-primary text-primary-foreground">
-                          Admin
-                        </Badge>
-                      )}
-                      <Badge variant="secondary" className="capitalize">{org.role}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

@@ -97,6 +97,15 @@ export default function OAuthCallbackPage() {
         tokenManager.setToken(token, expiresAt);
         await refreshUser();
 
+        // ── CLI bridge: deliver token to the local CLI server ─────────────────
+        const cliCallbackUrl = sessionStorage.getItem('cli_redirect_url');
+        if (cliCallbackUrl) {
+          sessionStorage.removeItem('cli_redirect_url');
+          // cliCallbackUrl already ends with "token=" — append the value
+          window.location.href = cliCallbackUrl + encodeURIComponent(token);
+          return;
+        }
+
         // ── OIDC bridge: complete the flow and redirect back to the OIDC client ──
         if (oidcSessionId) {
           try {

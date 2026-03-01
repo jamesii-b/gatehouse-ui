@@ -8,6 +8,11 @@ import {
   Loader2,
   Plus,
   ChevronRight,
+  ShieldCheck,
+  Shield,
+  Ban,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,16 +41,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api, User as ApiUser, SSHKey, ApiError } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 function formatDate(d: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function RoleBadge({ role }: { role: string }) {
+  const r = (role || "").toLowerCase();
+  if (r === "owner") {
+    return (
+      <Badge className="bg-purple-500/10 text-purple-600 border-purple-200 text-xs">
+        <ShieldCheck className="w-3 h-3 mr-1" />Owner
+      </Badge>
+    );
+  }
+  if (r === "admin") {
+    return (
+      <Badge className="bg-blue-500/10 text-blue-600 border-blue-200 text-xs">
+        <Shield className="w-3 h-3 mr-1" />Admin
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-xs text-muted-foreground">
+      Member
+    </Badge>
+  );
+}
+
 export default function AdminUsersPage() {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
 
   // User list
   const [users, setUsers] = useState<ApiUser[]>([]);
@@ -55,6 +92,7 @@ export default function AdminUsersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
 
   // Debounce search
   useEffect(() => {
@@ -67,12 +105,19 @@ export default function AdminUsersPage() {
   const [userSshKeys, setUserSshKeys] = useState<SSHKey[]>([]);
   const [isDrawerLoading, setIsDrawerLoading] = useState(false);
 
+  // Role update
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+
   // Admin add SSH key dialog
   const [showAddKey, setShowAddKey] = useState(false);
   const [addKeyPublicKey, setAddKeyPublicKey] = useState("");
   const [addKeyDescription, setAddKeyDescription] = useState("");
   const [isAddingKey, setIsAddingKey] = useState(false);
   const [addKeyError, setAddKeyError] = useState<string | null>(null);
+
+  // Suspend / unsuspend
+  const [isSuspending, setIsSuspending] = useState(false);
+  const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
 
   // ── Fetch users ─────────────────────────────────────────────────────────────
   const fetchUsers = useCallback(async (q: string, pg: number) => {
@@ -123,6 +168,32 @@ export default function AdminUsersPage() {
     }
   };
 
+  // ── Update role ──────────────────────────────────────────────────────────────
+  const handleRoleChange = async (newRole: string) => {
+    if (!selectedUser || !selectedUser.org_id) return;
+    setIsUpdatingRole(true);
+    try {
+      await api.admin.updateUserRole(selectedUser.org_id, selectedUser.id, newRole.toUpperCase());
+      const updated = { ...selectedUser, org_role: newRole };
+      setSelectedUser(updated);
+      setUsers((prev) =>
+        prev.map((u) => (u.id === selectedUser.id ? { ...u, org_role: newRole } : u))
+      );
+      toast({
+        title: "Role updated",
+        description: `${selectedUser.full_name || selectedUser.email} is now a ${newRole}.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to update role",
+        description: err instanceof ApiError ? err.message : "Something went wrong",
+      });
+    } finally {
+      setIsUpdatingRole(false);
+    }
+  };
+
   // ── Admin add SSH key ────────────────────────────────────────────────────────
   const handleAddKey = async () => {
     if (!selectedUser) return;
@@ -146,6 +217,47 @@ export default function AdminUsersPage() {
     }
   };
 
+  // ── Suspend / Unsuspend user ─────────────────────────────────────────────────
+  const handleSuspend = async () => {
+    if (!selectedUser) return;
+    setIsSuspending(true);
+    try {
+      const data = await api.admin.suspendUser(selectedUser.id);
+      const updated = { ...selectedUser, status: data.user.status };
+      setSelectedUser(updated);
+      setUsers((prev) => prev.map((u) => u.id === selectedUser.id ? { ...u, status: data.user.status } : u));
+      setShowSuspendConfirm(false);
+      toast({ title: "User suspended", description: `${selectedUser.full_name || selectedUser.email} has been suspended.` });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed to suspend user", description: err instanceof ApiError ? err.message : "Something went wrong" });
+    } finally {
+      setIsSuspending(false);
+    }
+  };
+
+  const handleUnsuspend = async () => {
+    if (!selectedUser) return;
+    setIsSuspending(true);
+    try {
+      const data = await api.admin.unsuspendUser(selectedUser.id);
+      const updated = { ...selectedUser, status: data.user.status };
+      setSelectedUser(updated);
+      setUsers((prev) => prev.map((u) => u.id === selectedUser.id ? { ...u, status: data.user.status } : u));
+      toast({ title: "User unsuspended", description: `${selectedUser.full_name || selectedUser.email} is now active.` });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed to unsuspend user", description: err instanceof ApiError ? err.message : "Something went wrong" });
+    } finally {
+      setIsSuspending(false);
+    }
+  };
+
+  // Filter by role client-side
+  const filteredUsers = users.filter((u) => {
+    if (roleFilter === "all") return true;
+    const r = (u.org_role || "member").toLowerCase();
+    return r === roleFilter;
+  });
+
   // ──────────────────────────────────────────────────────────────────────────────
   return (
     <div className="page-container">
@@ -156,15 +268,28 @@ export default function AdminUsersPage() {
         </p>
       </div>
 
-      {/* Search bar */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Search by name or email…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      {/* Search + filter bar */}
+      <div className="flex gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="All roles" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All roles</SelectItem>
+            <SelectItem value="owner">Owner</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="member">Member</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -174,21 +299,21 @@ export default function AdminUsersPage() {
             Users
             {!isLoading && <Badge variant="secondary" className="ml-1">{total}</Badge>}
           </CardTitle>
-          <CardDescription>Click a user to view details and manage their SSH keys</CardDescription>
+          <CardDescription>Click a user to view details and manage their role or SSH keys</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
-          ) : users.length === 0 ? (
+          ) : filteredUsers.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <User className="w-10 h-10 mx-auto mb-3 opacity-40" />
               <p className="text-sm">{debouncedSearch ? "No users match your search" : "No users found"}</p>
             </div>
           ) : (
             <div className="space-y-1">
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <button
                   key={user.id}
                   className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors text-left"
@@ -204,7 +329,13 @@ export default function AdminUsersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {(user as ApiUser & { activated?: boolean }).activated === false && (
+                    <RoleBadge role={user.org_role || "member"} />
+                    {user.status === "suspended" && (
+                      <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50">
+                        <Ban className="w-3 h-3 mr-1" />Suspended
+                      </Badge>
+                    )}
+                    {user.activated === false && (
                       <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
                         Not activated
                       </Badge>
@@ -261,18 +392,97 @@ export default function AdminUsersPage() {
               {/* Basic info */}
               <div className="space-y-3 mb-6">
                 <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-muted-foreground">Status</span>
+                  <span className="flex items-center gap-1">
+                    {selectedUser.status === "suspended" ? (
+                      <><Ban className="w-4 h-4 text-red-500" /><span className="text-red-600 font-medium">Suspended</span></>
+                    ) : (
+                      <><CheckCircle className="w-4 h-4 text-green-500" /><span className="text-green-600">Active</span></>
+                    )}
+                  </span>
                   <span className="text-muted-foreground">Joined</span>
                   <span>{formatDate(selectedUser.created_at)}</span>
                   <span className="text-muted-foreground">Activated</span>
                   <span className="flex items-center gap-1">
-                    {(selectedUser as ApiUser & { activated?: boolean }).activated === false ? (
+                    {selectedUser.activated === false ? (
                       <><XCircle className="w-4 h-4 text-amber-500" /> No</>
                     ) : (
                       <><CheckCircle className="w-4 h-4 text-green-500" /> Yes</>
                     )}
                   </span>
+                  <span className="text-muted-foreground">Last login</span>
+                  <span>{formatDate(selectedUser.last_login_at)}</span>
                 </div>
               </div>
+
+              {/* Suspend / Unsuspend — only for other users */}
+              {selectedUser.id !== currentUser?.id && (
+                <div className="mb-6 p-4 border rounded-lg space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Ban className="w-4 h-4" />
+                    Account Access
+                  </h3>
+                  {selectedUser.status === "suspended" ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">This account is suspended. The user cannot log in or request certificates.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleUnsuspend}
+                        disabled={isSuspending}
+                        className="text-green-600 border-green-300 hover:bg-green-50"
+                      >
+                        {isSuspending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserCheck className="w-4 h-4 mr-2" />}
+                        Restore account
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Suspending blocks this user from logging in and requesting SSH certificates.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowSuspendConfirm(true)}
+                        disabled={isSuspending}
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                      >
+                        <Ban className="w-4 h-4 mr-2" />
+                        Suspend account
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Role management — only if not viewing yourself and user has org_id */}
+              {selectedUser.org_id && selectedUser.id !== currentUser?.id && (
+                <div className="mb-6 p-4 border rounded-lg space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    Organization Role
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <Select
+                      value={(selectedUser.org_role || "member").toLowerCase()}
+                      onValueChange={handleRoleChange}
+                      disabled={isUpdatingRole || (selectedUser.org_role || "").toLowerCase() === "owner"}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="owner">Owner</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {isUpdatingRole && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                  </div>
+                  {(selectedUser.org_role || "").toLowerCase() === "owner" && (
+                    <p className="text-xs text-muted-foreground">Owner role cannot be changed here. Transfer ownership from the Members page.</p>
+                  )}
+                </div>
+              )}
 
               {/* SSH Keys section */}
               <div className="space-y-3">
@@ -367,6 +577,34 @@ export default function AdminUsersPage() {
             <Button onClick={handleAddKey} disabled={isAddingKey || !addKeyPublicKey.trim()}>
               {isAddingKey && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Add key
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Suspend confirmation dialog ───────────────────────────────────────── */}
+      <Dialog open={showSuspendConfirm} onOpenChange={setShowSuspendConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Suspend account?
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{selectedUser?.full_name || selectedUser?.email}</strong> will be blocked from logging in and requesting SSH certificates. You can restore their access at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSuspendConfirm(false)} disabled={isSuspending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleSuspend}
+              disabled={isSuspending}
+            >
+              {isSuspending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Suspend
             </Button>
           </DialogFooter>
         </DialogContent>

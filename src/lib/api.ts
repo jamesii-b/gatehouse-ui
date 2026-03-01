@@ -25,6 +25,10 @@ export interface User {
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
+  // Fields present in admin list view
+  org_role?: string;
+  org_id?: string;
+  activated?: boolean;
 }
 
 export interface Organization {
@@ -471,6 +475,14 @@ export const api = {
         true,
         requestConfig,
       ),
+
+    // Get pending (unaccepted) invitations for the logged-in user
+    getMyInvites: (requestConfig?: RequestConfig) =>
+      request<{ invites: PendingInvite[] }>('/users/me/invites', {}, true, requestConfig),
+
+    // Get the current user's department + principal memberships across all orgs
+    getMyMemberships: (requestConfig?: RequestConfig) =>
+      request<{ orgs: MyOrgMembership[] }>('/users/me/memberships', {}, true, requestConfig),
   },
 
   admin: {
@@ -495,6 +507,51 @@ export const api = {
     // Get a single user's profile + SSH keys (admin view)
     getUser: (userId: string, requestConfig?: RequestConfig) =>
       request<{ user: User; ssh_keys: SSHKey[] }>(`/admin/users/${userId}`, {}, true, requestConfig),
+
+    // Update a user's role in a shared org (admin action)
+    updateUserRole: (orgId: string, userId: string, role: string, requestConfig?: RequestConfig) =>
+      request<{ member: OrganizationMember }>(`/organizations/${orgId}/members/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+      }, true, requestConfig),
+
+    // List application-level OAuth provider configurations
+    listOAuthProviders: (requestConfig?: RequestConfig) =>
+      request<{ providers: { id: string; name: string; is_configured: boolean; is_enabled: boolean; client_id: string | null }[] }>(
+        '/admin/oauth/providers', {}, true, requestConfig,
+      ),
+
+    // Create or update an application-level OAuth provider
+    configureOAuthProvider: (provider: string, clientId: string, clientSecret: string, isEnabled: boolean, requestConfig?: RequestConfig) =>
+      request<{ provider: { id: string; client_id: string; is_enabled: boolean } }>(
+        `/admin/oauth/providers/${provider}`,
+        { method: 'PUT', body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, is_enabled: isEnabled }) },
+        true,
+        requestConfig,
+      ),
+
+    // Delete an application-level OAuth provider
+    deleteOAuthProvider: (provider: string, requestConfig?: RequestConfig) =>
+      request<Record<string, never>>(`/admin/oauth/providers/${provider}`, { method: 'DELETE' }, true, requestConfig),
+
+    // Suspend a user account (blocks login & CA issuance)
+    suspendUser: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ user: User }>(`/admin/users/${userId}/suspend`, { method: 'POST' }, true, requestConfig),
+
+    // Restore a suspended user to active status
+    unsuspendUser: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ user: User }>(`/admin/users/${userId}/unsuspend`, { method: 'POST' }, true, requestConfig),
+
+    // Get the cert policy for a department
+    getDeptCertPolicy: (orgId: string, deptId: string, requestConfig?: RequestConfig) =>
+      request<{ cert_policy: DeptCertPolicy }>(`/organizations/${orgId}/departments/${deptId}/cert-policy`, {}, true, requestConfig),
+
+    // Create or update the cert policy for a department
+    setDeptCertPolicy: (orgId: string, deptId: string, policy: Partial<DeptCertPolicy>, requestConfig?: RequestConfig) =>
+      request<{ cert_policy: DeptCertPolicy }>(`/organizations/${orgId}/departments/${deptId}/cert-policy`, {
+        method: 'PUT',
+        body: JSON.stringify(policy),
+      }, true, requestConfig),
   },
 
   totp: {
@@ -873,6 +930,16 @@ export const api = {
         body: JSON.stringify({ email, role }),
       }, true, requestConfig),
 
+    // List pending invites for an organization
+    getInvites: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ invites: OrgInvite[] }>(`/organizations/${orgId}/invites`, {}, true, requestConfig),
+
+    // Cancel (delete) an invite
+    cancelInvite: (orgId: string, inviteId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/invites/${inviteId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
     // List OIDC clients
     getClients: (orgId: string, requestConfig?: RequestConfig) =>
       request<{ clients: OIDCClient[]; count: number }>(`/organizations/${orgId}/clients`, {}, true, requestConfig),
@@ -918,14 +985,14 @@ export const api = {
   invites: {
     // Get invite details by token (unauthenticated)
     getInfo: (token: string) =>
-      request<{ email: string; organization: { id: string; name: string }; role: string }>(
+      request<{ email: string; organization: { id: string; name: string }; role: string; user_exists?: boolean }>(
         `/invites/${token}`,
         {},
         false,
       ),
 
-    // Accept invite (unauthenticated)
-    accept: (token: string, full_name: string, password: string) =>
+    // Accept invite (unauthenticated) — password/name only needed for new accounts
+    accept: (token: string, full_name?: string, password?: string) =>
       request<LoginResponse>(
         `/invites/${token}/accept`,
         {
@@ -978,6 +1045,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ key_id, principals, cert_type, expiry_hours }),
       }, true, requestConfig),
+
+    // Get the merged department certificate policy for the current user (used in sign dialog)
+    getMyDeptCertPolicy: (requestConfig?: RequestConfig) =>
+      request<{ policy: DeptCertPolicy }>('/ssh/dept-cert-policy', {}, true, requestConfig),
 
     // List issued certificates for the current user
     listCertificates: (requestConfig?: RequestConfig) =>
@@ -1064,6 +1135,40 @@ export interface Department {
   deleted_at: string | null;
 }
 
+export const STANDARD_SSH_EXTENSIONS = [
+  'permit-X11-forwarding',
+  'permit-agent-forwarding',
+  'permit-pty',
+  'permit-port-forwarding',
+  'permit-user-rc',
+] as const;
+
+export interface DeptCertPolicy {
+  department_id: string;
+  allow_user_expiry: boolean;
+  default_expiry_hours: number;
+  max_expiry_hours: number;
+  allowed_extensions: string[];
+  custom_extensions: string[];
+  all_extensions?: string[];
+  standard_extensions?: string[];
+}
+
+export interface PendingInvite {
+  token: string;
+  organization: { id: string; name: string };
+  role: string;
+  expires_at: string;
+}
+
+export interface MyOrgMembership {
+  org_id: string;
+  org_name: string;
+  role: string;
+  departments: { id: string; name: string; description: string | null }[];
+  principals: { id: string; name: string; description: string | null; via_department: boolean }[];
+}
+
 export interface DepartmentMember {
   id: string;
   user_id: string;
@@ -1097,6 +1202,7 @@ export interface OrgInvite {
   email: string;
   role: string;
   expires_at: string;
+  invite_link?: string;  // only present on create response (dev/when email disabled)
 }
 
 export interface OIDCClient {

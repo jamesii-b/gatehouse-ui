@@ -38,8 +38,10 @@ import OIDCClientsPage from "@/pages/org/OIDCClientsPage";
 import CAsPage from "@/pages/org/CAsPage";
 import DepartmentsPage from "@/pages/org/DepartmentsPage";
 import PrincipalsPage from "@/pages/org/PrincipalsPage";
+import MyMembershipsPage from "@/pages/org/MyMembershipsPage";
 import SystemAuditPage from "@/pages/admin/SystemAuditPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
+import OAuthProvidersPage from "@/pages/admin/OAuthProvidersPage";
 
 import NotFound from "@/pages/NotFound";
 import ApiDevTools from "@/components/dev/ApiDevTools";
@@ -78,8 +80,30 @@ import { Navigate } from "react-router-dom";
 /** Redirects already-authenticated users away from guest-only pages (e.g. /login). */
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  // Allow authenticated users through to /login when it's a CLI auth request —
+  // LoginPage will immediately forward the existing token to the CLI callback.
+  const params = new URLSearchParams(window.location.search);
+  const isCli = params.has('cli_token') || params.has('cli_redirect');
   if (isLoading) return null; // wait for auth state to resolve
-  if (isAuthenticated) return <Navigate to="/profile" replace />;
+  if (isAuthenticated && !isCli) return <Navigate to="/profile" replace />;
+  return <>{children}</>;
+}
+
+/** Blocks access to /admin/* for non-admin users. */
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { isOrgAdmin, isLoading, isAuthenticated } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isOrgAdmin) return <Navigate to="/profile" replace />;
+  return <>{children}</>;
+}
+
+/** Blocks access to /org/* for users who don't belong to any organisation. */
+function RequireOrgMember({ children }: { children: React.ReactNode }) {
+  const { isOrgMember, isLoading, isAuthenticated } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isOrgMember) return <Navigate to="/profile" replace />;
   return <>{children}</>;
 }
 
@@ -113,20 +137,24 @@ function AppRoutes() {
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/ssh-keys" element={<SSHKeysPage />} />
 
-          {/* Organization routes */}
-          <Route path="/org" element={<OrgOverviewPage />} />
-          <Route path="/org/members" element={<MembersPage />} />
-          <Route path="/org/departments" element={<DepartmentsPage />} />
-          <Route path="/org/principals" element={<PrincipalsPage />} />
-          <Route path="/org/policies" element={<PoliciesPage />} />
-          <Route path="/org/policies/compliance" element={<CompliancePage />} />
-          <Route path="/org/audit" element={<OrgAuditPage />} />
-          <Route path="/org/clients" element={<OIDCClientsPage />} />
-          <Route path="/org/cas" element={<CAsPage />} />
+          {/* Organization routes — org members: overview + own memberships only */}
+          <Route path="/org" element={<RequireOrgMember><OrgOverviewPage /></RequireOrgMember>} />
+          <Route path="/org/my-memberships" element={<RequireOrgMember><MyMembershipsPage /></RequireOrgMember>} />
 
-          {/* Admin routes */}
-          <Route path="/admin/audit" element={<SystemAuditPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
+          {/* Organization management routes — org admins/owners only */}
+          <Route path="/org/members" element={<RequireAdmin><MembersPage /></RequireAdmin>} />
+          <Route path="/org/departments" element={<RequireAdmin><DepartmentsPage /></RequireAdmin>} />
+          <Route path="/org/principals" element={<RequireAdmin><PrincipalsPage /></RequireAdmin>} />
+          <Route path="/org/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
+          <Route path="/org/policies/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
+          <Route path="/org/audit" element={<RequireAdmin><OrgAuditPage /></RequireAdmin>} />
+          <Route path="/org/clients" element={<RequireAdmin><OIDCClientsPage /></RequireAdmin>} />
+          <Route path="/org/cas" element={<RequireAdmin><CAsPage /></RequireAdmin>} />
+
+          {/* Admin routes — org admin/owner only */}
+          <Route path="/admin/audit" element={<RequireAdmin><SystemAuditPage /></RequireAdmin>} />
+          <Route path="/admin/users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />
+          <Route path="/admin/oauth" element={<RequireAdmin><OAuthProvidersPage /></RequireAdmin>} />
         </Route>
 
         {/* Catch-all */}

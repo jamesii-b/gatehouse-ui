@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Search, Filter, Loader2, User, Clock, AlertTriangle, CheckCircle, Mail, ExternalLink } from "lucide-react";
+import { Shield, Search, Loader2, User, Clock, AlertTriangle, CheckCircle, Mail, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, OrgComplianceMember, create403Handler } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useOrganizations } from "@/hooks/useOrganizations";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   compliant: {
@@ -51,18 +52,13 @@ export default function CompliancePage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // Fetch organizations to get current org
-  const { data: orgsData, isLoading: orgsLoading } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: () => api.users.organizations({
-      on403: create403Handler(toast),
-    }),
-  });
+  const { data: organizations, isLoading: orgsLoading } = useOrganizations();
 
   useEffect(() => {
-    if (orgsData?.organizations && orgsData.organizations.length > 0) {
-      setCurrentOrgId(orgsData.organizations[0].id);
+    if (organizations && organizations.length > 0) {
+      setCurrentOrgId(organizations[0].id);
     }
-  }, [orgsData]);
+  }, [organizations]);
 
   // Fetch compliance data
   const { data: complianceData, isLoading: complianceLoading } = useQuery({
@@ -71,6 +67,18 @@ export default function CompliancePage() {
       on403: create403Handler(toast),
     }) : null,
     enabled: !!currentOrgId,
+  });
+
+  // Send MFA reminder mutation
+  const { mutate: sendReminder, variables: reminderVars, isPending: isSendingReminder } = useMutation({
+    mutationFn: ({ userId }: { userId: string }) =>
+      api.organizations.sendMfaReminder(currentOrgId!, userId),
+    onSuccess: () => {
+      toast({ title: "Reminder sent", description: "MFA reminder email sent successfully." });
+    },
+    onError: () => {
+      toast({ title: "Failed to send", description: "Could not send the reminder. Please try again.", variant: "destructive" });
+    },
   });
 
   // Filter members based on search and status
@@ -256,10 +264,8 @@ export default function CompliancePage() {
                           size="icon"
                           className="h-8 w-8"
                           title="Send Reminder"
-                          onClick={() => {
-                            // TODO: Implement send reminder
-                            console.log('Send reminder to', member.user_id);
-                          }}
+                          disabled={isSendingReminder && reminderVars?.userId === member.user_id}
+                          onClick={() => sendReminder({ userId: member.user_id })}
                         >
                           <Mail className="w-4 h-4" />
                         </Button>
