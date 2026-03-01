@@ -42,6 +42,7 @@ import MyMembershipsPage from "@/pages/org/MyMembershipsPage";
 import SystemAuditPage from "@/pages/admin/SystemAuditPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import OAuthProvidersPage from "@/pages/admin/OAuthProvidersPage";
+import OrgSetupPage from "@/pages/auth/OrgSetupPage";
 
 import NotFound from "@/pages/NotFound";
 import ApiDevTools from "@/components/dev/ApiDevTools";
@@ -79,13 +80,16 @@ import { Navigate } from "react-router-dom";
 
 /** Redirects already-authenticated users away from guest-only pages (e.g. /login). */
 function GuestRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isOrgMember, isLoading } = useAuth();
   // Allow authenticated users through to /login when it's a CLI auth request —
   // LoginPage will immediately forward the existing token to the CLI callback.
   const params = new URLSearchParams(window.location.search);
   const isCli = params.has('cli_token') || params.has('cli_redirect');
   if (isLoading) return null; // wait for auth state to resolve
-  if (isAuthenticated && !isCli) return <Navigate to="/profile" replace />;
+  if (isAuthenticated && !isCli) {
+    // If the user hasn't set up an org yet, send them there first
+    return <Navigate to={isOrgMember ? "/profile" : "/org-setup"} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -104,6 +108,15 @@ function RequireOrgMember({ children }: { children: React.ReactNode }) {
   if (isLoading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!isOrgMember) return <Navigate to="/profile" replace />;
+  return <>{children}</>;
+}
+
+/** 
+ *  Used for /org-setup which lives inside PublicLayout */
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
@@ -126,6 +139,9 @@ function AppRoutes() {
           <Route path="/error" element={<OIDCErrorPage />} />
           <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
           <Route path="/activate" element={<ActivatePage />} />
+          {/* Org-setup uses the same full-screen centred layout as auth pages,
+              but requires a valid session token (RequireAuth guard below). */}
+          <Route path="/org-setup" element={<RequireAuth><OrgSetupPage /></RequireAuth>} />
         </Route>
 
         {/* Protected routes - handles auth and MFA enforcement */}

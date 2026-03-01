@@ -186,7 +186,7 @@ export default function MembersPage() {
     if (!orgId || !changeRoleMember) return;
     setIsChangingRole(true);
     try {
-      const updated = await api.organizations.updateMemberRole(orgId, changeRoleMember.user_id, newRole.toUpperCase());
+      const updated = await api.organizations.updateMemberRole(orgId, changeRoleMember.user_id, newRole.toLowerCase());
       setMembers((prev) =>
         prev.map((m) => (m.id === changeRoleMember.id ? { ...m, role: updated.member.role } : m))
       );
@@ -331,7 +331,7 @@ export default function MembersPage() {
         <TabsContent value="invites">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
-              <CardContent>
+              <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold">Pending invitations</h3>
                   <span className="text-sm text-muted-foreground">{isInvitesLoading ? 'Loading...' : `${invites.length}`}</span>
@@ -374,9 +374,11 @@ export default function MembersPage() {
 
             <Card>
               <CardContent className="p-6 space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Mail className="w-4 h-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">Send an invitation</h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Send an invitation</h3>
+                  </div>
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-2">

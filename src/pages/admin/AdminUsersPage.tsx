@@ -57,6 +57,10 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function isSuspended(status: string | undefined) {
+  return status === "suspended" || status === "compliance_suspended";
+}
+
 function RoleBadge({ role }: { role: string }) {
   const r = (role || "").toLowerCase();
   if (r === "owner") {
@@ -330,7 +334,7 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <RoleBadge role={user.org_role || "member"} />
-                    {user.status === "suspended" && (
+                    {isSuspended(user.status) && (
                       <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50">
                         <Ban className="w-3 h-3 mr-1" />Suspended
                       </Badge>
@@ -394,8 +398,8 @@ export default function AdminUsersPage() {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <span className="text-muted-foreground">Status</span>
                   <span className="flex items-center gap-1">
-                    {selectedUser.status === "suspended" ? (
-                      <><Ban className="w-4 h-4 text-red-500" /><span className="text-red-600 font-medium">Suspended</span></>
+                    {isSuspended(selectedUser.status) ? (
+                      <><Ban className="w-4 h-4 text-red-500" /><span className="text-red-600 font-medium">Suspended{selectedUser.status === "compliance_suspended" ? " (compliance)" : ""}</span></>
                     ) : (
                       <><CheckCircle className="w-4 h-4 text-green-500" /><span className="text-green-600">Active</span></>
                     )}
@@ -422,9 +426,13 @@ export default function AdminUsersPage() {
                     <Ban className="w-4 h-4" />
                     Account Access
                   </h3>
-                  {selectedUser.status === "suspended" ? (
+                  {isSuspended(selectedUser.status) ? (
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">This account is suspended. The user cannot log in or request certificates.</p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedUser.status === "compliance_suspended"
+                          ? "This account is suspended due to MFA compliance. The user cannot log in or request certificates."
+                          : "This account is suspended. The user cannot log in or request certificates."}
+                      </p>
                       <Button
                         size="sm"
                         variant="outline"

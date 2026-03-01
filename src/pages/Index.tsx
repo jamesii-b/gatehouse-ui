@@ -4,17 +4,18 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isOrgMember, isLoading } = useAuth();
 
   useEffect(() => {
     if (isLoading) return; // Wait for auth check to complete
 
     if (isAuthenticated) {
-      navigate("/profile");
+      // If the user has no org yet, send them to the org-setup page first
+      navigate(isOrgMember ? "/profile" : "/org-setup", { replace: true });
     } else {
       navigate("/login");
     }
-  }, [isLoading, isAuthenticated, navigate]);
+  }, [isLoading, isAuthenticated, isOrgMember, navigate]);
 
   return null;
 };

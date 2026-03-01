@@ -6,7 +6,7 @@ import { useOrganizations } from '@/hooks/useOrganizations';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedLayout() {
-  const { isAuthenticated, isLoading, requiresMfaEnrollment } = useAuth();
+  const { isAuthenticated, isLoading, requiresMfaEnrollment, isOrgMember } = useAuth();
   const { isLoading: isOrgsLoading } = useOrganizations();
 
   if (isLoading || isOrgsLoading) {
@@ -22,6 +22,11 @@ export default function ProtectedLayout() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  // User is logged in but hasn't joined/created an org yet — send to org-setup
+  if (!isOrgMember) {
+    return <Navigate to="/org-setup" replace />;
   }
 
   if (requiresMfaEnrollment) {

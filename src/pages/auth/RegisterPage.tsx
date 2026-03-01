@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, User, ArrowRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
 import { BannerAlert } from "@/components/auth/BannerAlert";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, tokenManager } from "@/lib/api";
 
-type RegistrationState = "form" | "success" | "disabled";
+type RegistrationState = "form" | "disabled";
 
 export default function RegisterPage() {
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,9 +44,20 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      await api.auth.register(email, password, name.trim() || undefined);
-      // Show "check your email" — verification email was sent
-      setState("success");
+      const response = await api.auth.register(email, password, name.trim() || undefined);
+
+      // Store the session token so ProtectedLayout lets the user through
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
+      }
+
+      // Navigate to org-setup so the user can name their org or accept an invite
+      navigate("/org-setup", {
+        state: {
+          pendingInvites: response.pending_invites ?? [],
+          isFirstUser: response.is_first_user ?? false,
+        },
+      });
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 409) {
@@ -84,44 +96,6 @@ export default function RegisterPage() {
             Back to sign in
           </Button>
         </Link>
-      </div>
-    );
-  }
-
-  // Success state - email sent
-  if (state === "success") {
-    return (
-      <div className="auth-card text-center">
-        <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-6">
-          <Mail className="w-8 h-8 text-success" />
-        </div>
-
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          Check your email
-        </h1>
-        <p className="text-muted-foreground mt-2 mb-6">
-          We've sent a verification link to <span className="font-medium text-foreground">{email}</span>. 
-          Click the link to verify your account and get started.
-        </p>
-
-        <div className="space-y-3">
-          <Link to="/login">
-            <Button className="w-full">
-              Continue to sign in
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Link>
-        </div>
-
-        <p className="text-sm text-muted-foreground mt-6">
-          Didn't receive the email?{" "}
-          <button 
-            onClick={() => setState("form")}
-            className="text-accent hover:underline font-medium"
-          >
-            Try again
-          </button>
-        </p>
       </div>
     );
   }

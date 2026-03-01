@@ -75,10 +75,30 @@ export default function OAuthCallbackPage() {
         return;
       }
 
-      // Organisation creation required
+      // Organisation creation required — store the token and send to /org-setup
       if (requiresOrgCreation) {
-        setStatus('error');
-        setError("No organization found for your account. Please ask an administrator to add you to an organization.");
+        const orgSetupToken = searchParams.get("token");
+        const orgSetupExpiresIn = searchParams.get("expires_in");
+        const pendingInvitesRaw = searchParams.get("pending_invites");
+
+        if (orgSetupToken) {
+          const expiresAt = orgSetupExpiresIn
+            ? new Date(Date.now() + parseInt(orgSetupExpiresIn, 10) * 1000).toISOString()
+            : null;
+          tokenManager.setToken(orgSetupToken, expiresAt);
+        }
+
+        let pendingInvites: Array<{ token: string; organization: { id: string; name: string }; role: string; expires_at: string }> = [];
+        try {
+          if (pendingInvitesRaw) pendingInvites = JSON.parse(pendingInvitesRaw);
+        } catch {
+          // ignore parse errors
+        }
+
+        navigate('/org-setup', {
+          replace: true,
+          state: { pendingInvites, isFirstUser: false },
+        });
         return;
       }
 

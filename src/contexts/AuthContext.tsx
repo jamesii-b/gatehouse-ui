@@ -1,11 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, User, ApiError, tokenManager, MfaComplianceSummary } from '@/lib/api';
+import { api, User, ApiError, tokenManager, MfaComplianceSummary, PendingInvite } from '@/lib/api';
 
 interface LoginResult {
   requiresTotp: boolean;
   requiresWebAuthn: boolean;
   requiresMfaEnrollment?: boolean;
+  requiresOrgSetup?: boolean;
+  pendingInvites?: PendingInvite[];
+  isFirstUser?: boolean;
 }
 
 interface AuthContextType {
@@ -22,6 +25,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   refreshCompliance: () => Promise<void>;
+  /** Re-check org membership & admin status. Exposed so post-setup pages can update the context. */
+  checkOrgAdmin: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -215,10 +220,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRequiresMfaEnrollment(false);
       await checkOrgAdmin();
       if (!skipNavigate) {
-        navigate('/profile');
+        if (response.requires_org_setup) {
+          navigate('/org-setup', {
+            state: {
+              pendingInvites: response.pending_invites ?? [],
+              isFirstUser: false,
+            },
+          });
+        } else {
+          navigate('/profile');
+        }
       }
     }
-    return { requiresTotp: false, requiresWebAuthn: false };
+    return {
+      requiresTotp: false,
+      requiresWebAuthn: false,
+      requiresOrgSetup: response.requires_org_setup,
+      pendingInvites: response.pending_invites,
+    };
   }, [navigate, checkOrgAdmin]);
 
   const verifyWebAuthn = useCallback(async () => {
@@ -280,6 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         refreshUser,
         refreshCompliance,
+        checkOrgAdmin,
       }}
     >
       {children}

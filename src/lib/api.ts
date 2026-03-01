@@ -84,6 +84,12 @@ export interface LoginResponse {
   requires_webauthn?: boolean;
   requires_mfa_enrollment?: boolean;
   mfa_compliance?: MfaComplianceSummary;
+  /** Set on login when the user belongs to no organisations. */
+  requires_org_setup?: boolean;
+  /** Pending invitations for the user's email (present when requires_org_setup is true). */
+  pending_invites?: PendingInvite[];
+  /** True when the registering user is the very first user on this instance. */
+  is_first_user?: boolean;
 }
 
 export interface TotpEnrollResponse {
@@ -784,6 +790,13 @@ export const api = {
   },
 
   organizations: {
+    // Create a new organization (caller becomes owner)
+    create: (name: string, slug: string, description?: string) =>
+      request<{ organization: Organization }>('/organizations', {
+        method: 'POST',
+        body: JSON.stringify({ name, slug, description }),
+      }, true),
+
     // Get organization by ID
     getById: (orgId: string, requestConfig?: RequestConfig) =>
       request<{ organization: Organization; member_count: number }>(`/organizations/${orgId}`, {}, true, requestConfig),
@@ -979,6 +992,19 @@ export const api = {
       request<{ ca: OrgCA }>(`/organizations/${orgId}/cas/${caId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
+      }, true, requestConfig),
+
+    // Rotate (replace) a CA's key pair — returns updated CA + old_fingerprint
+    rotateCA: (orgId: string, caId: string, data?: { key_type?: 'ed25519' | 'rsa' | 'ecdsa'; reason?: string }, requestConfig?: RequestConfig) =>
+      request<{ ca: OrgCA; old_fingerprint: string }>(`/organizations/${orgId}/cas/${caId}/rotate`, {
+        method: 'POST',
+        body: JSON.stringify(data ?? {}),
+      }, true, requestConfig),
+
+    // Soft-delete a CA
+    deleteCA: (orgId: string, caId: string, requestConfig?: RequestConfig) =>
+      request<{ ca_id: string }>(`/organizations/${orgId}/cas/${caId}`, {
+        method: 'DELETE',
       }, true, requestConfig),
   },
 
@@ -1329,13 +1355,21 @@ export interface OrgCA {
   public_key: string;
   fingerprint: string;
   is_active: boolean;
+  /** True when this entry represents the server-wide config-file CA.
+   *  System CAs are read-only — they cannot be edited, deleted, or replaced
+   *  from the UI. */
+  is_system?: boolean;
   default_cert_validity_hours: number;
   max_cert_validity_hours: number;
   total_certs: number;
   active_certs: number;
   revoked_certs: number;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
+  /** Set when the key was last rotated. */
+  rotated_at: string | null;
+  /** Reason provided when the key was last rotated. */
+  rotation_reason: string | null;
 }
 
 // Reusable 403 error handler for API calls
