@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api, OrgComplianceMember, create403Handler } from "@/lib/api";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useOrganizations } from "@/hooks/useOrganizations";
+import { useOrg } from "@/contexts/OrgContext";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   compliant: {
@@ -47,18 +47,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
 export default function CompliancePage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [currentOrgId, setCurrentOrgId] = useState<string | null>(null);
+  const { selectedOrgId: currentOrgId } = useOrg();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-
-  // Fetch organizations to get current org
-  const { data: organizations, isLoading: orgsLoading } = useOrganizations();
-
-  useEffect(() => {
-    if (organizations && organizations.length > 0) {
-      setCurrentOrgId(organizations[0].id);
-    }
-  }, [organizations]);
 
   // Fetch compliance data
   const { data: complianceData, isLoading: complianceLoading } = useQuery({
@@ -101,7 +92,7 @@ export default function CompliancePage() {
     suspended: complianceData?.members?.filter(m => m.status === 'suspended').length || 0,
   };
 
-  if (orgsLoading || complianceLoading) {
+  if (complianceLoading) {
     return (
       <div className="page-container">
         <div className="flex items-center justify-center py-12">

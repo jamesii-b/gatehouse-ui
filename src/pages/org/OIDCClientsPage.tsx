@@ -23,10 +23,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, OIDCClient, OIDCClientWithSecret } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useOrg } from "@/contexts/OrgContext";
 
 export default function OIDCClientsPage() {
   const { toast } = useToast();
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const { selectedOrgId: orgId } = useOrg();
   const [clients, setClients] = useState<OIDCClient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -44,15 +45,10 @@ export default function OIDCClientsPage() {
   };
 
   useEffect(() => {
-    api.users.organizations()
-      .then((data) => {
-        if (!data.organizations.length) { setIsLoading(false); return; }
-        const id = data.organizations[0].id;
-        setOrgId(id);
-        loadData(id);
-      })
-      .catch(() => { setIsLoading(false); });
-  }, []);
+    if (!orgId) { setIsLoading(false); return; }
+    setIsLoading(true);
+    loadData(orgId);
+  }, [orgId]);
 
   const handleCreate = async () => {
     if (!orgId || !nameRef.current || !urisRef.current) return;

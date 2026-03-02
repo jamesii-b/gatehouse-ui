@@ -128,7 +128,7 @@ function CADetailCard({ ca, onEdit, onRotate, onDelete }: CADetailCardProps) {
         <CardContent className="space-y-4">
           {/* Stats — hidden for system CAs (we have no cert records for them) */}
           {!isSystem && (
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-4 gap-3 text-center">
               <div className="p-2 bg-muted rounded-lg">
                 <p className="text-lg font-semibold">{ca.active_certs}</p>
                 <p className="text-xs text-muted-foreground">Active certs</p>
@@ -140,6 +140,10 @@ function CADetailCard({ ca, onEdit, onRotate, onDelete }: CADetailCardProps) {
               <div className="p-2 bg-muted rounded-lg">
                 <p className="text-lg font-semibold">{ca.default_cert_validity_hours}h</p>
                 <p className="text-xs text-muted-foreground">Default validity</p>
+              </div>
+              <div className="p-2 bg-muted rounded-lg">
+                <p className="text-lg font-semibold">{ca.next_serial_number ?? '—'}</p>
+                <p className="text-xs text-muted-foreground">Next serial</p>
               </div>
             </div>
           )}

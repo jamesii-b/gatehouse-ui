@@ -455,6 +455,10 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
+    // Delete the current user's own account (soft delete)
+    deleteMe: (requestConfig?: RequestConfig) =>
+      request<{ message: string }>('/users/me', { method: 'DELETE' }, true, requestConfig),
+
     organizations: (requestConfig?: RequestConfig) =>
       request<OrganizationsResponse>('/users/me/organizations', {}, true, requestConfig),
 
@@ -547,6 +551,15 @@ export const api = {
     // Restore a suspended user to active status
     unsuspendUser: (userId: string, requestConfig?: RequestConfig) =>
       request<{ user: User }>(`/admin/users/${userId}/unsuspend`, { method: 'POST' }, true, requestConfig),
+
+    // Permanently delete a user — revokes certs, cascades DB delete, unrecoverable
+    hardDeleteUser: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ deleted_user_id: string; deleted_user_email: string; ssh_keys_deleted: number; certs_revoked: number }>(
+        `/admin/users/${userId}/delete`,
+        { method: 'POST', body: JSON.stringify({ confirm: true }) },
+        true,
+        requestConfig,
+      ),
 
     // Get the cert policy for a department
     getDeptCertPolicy: (orgId: string, deptId: string, requestConfig?: RequestConfig) =>
@@ -801,6 +814,10 @@ export const api = {
     getById: (orgId: string, requestConfig?: RequestConfig) =>
       request<{ organization: Organization; member_count: number }>(`/organizations/${orgId}`, {}, true, requestConfig),
 
+    // Delete an organization (owner only; must have no other members)
+    deleteOrganization: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}`, { method: 'DELETE' }, true, requestConfig),
+
     // Get organization members
     getMembers: (orgId: string, requestConfig?: RequestConfig) =>
       request<{ members: OrganizationMember[]; count: number }>(`/organizations/${orgId}/members`, {}, true, requestConfig),
@@ -975,6 +992,15 @@ export const api = {
       request<{ message: string }>(`/organizations/${orgId}/members/${userId}/send-mfa-reminder`, {
         method: 'POST',
       }, true, requestConfig),
+
+    // Transfer organization ownership to another member
+    transferOwnership: (orgId: string, newOwnerUserId: string, requestConfig?: RequestConfig) =>
+      request<{ previous_owner: OrganizationMember; new_owner: OrganizationMember }>(
+        `/organizations/${orgId}/transfer-ownership`,
+        { method: 'POST', body: JSON.stringify({ new_owner_user_id: newOwnerUserId }) },
+        true,
+        requestConfig,
+      ),
 
     // List Certificate Authorities for an org
     getCAs: (orgId: string, requestConfig?: RequestConfig) =>
@@ -1364,6 +1390,8 @@ export interface OrgCA {
   total_certs: number;
   active_certs: number;
   revoked_certs: number;
+  /** Next serial number that will be assigned when a certificate is issued. */
+  next_serial_number: number | null;
   created_at: string | null;
   updated_at: string | null;
   /** Set when the key was last rotated. */

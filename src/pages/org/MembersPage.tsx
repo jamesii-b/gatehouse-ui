@@ -1,12 +1,34 @@
-import { useState, useEffect } from "react";
-import { Search, Shield, ShieldCheck, Mail, Loader2, Copy, Check, ExternalLink } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Search,
+  Shield,
+  ShieldCheck,
+  Mail,
+  Loader2,
+  Copy,
+  Check,
+  ExternalLink,
+  User,
+  Key,
+  Plus,
+  Ban,
+  UserCheck,
+  AlertTriangle,
+  MoreHorizontal,
+  ChevronRight,
+  CheckCircle,
+  XCircle,
+  Crown,
+  Trash2,
+} from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,12 +51,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { api, OrganizationMember, ApiError, OrgInvite } from "@/lib/api";
+import { api, OrganizationMember, ApiError, OrgInvite, SSHKey, User as ApiUser } from "@/lib/api";
 import { useCurrentOrganizationId } from "@/hooks/useCurrentOrganization";
 import { useAuth } from "@/contexts/AuthContext";
-import { MoreHorizontal } from "lucide-react";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 const getInitials = (name: string | null | undefined): string => {
   if (!name) return "?";
@@ -45,6 +75,19 @@ const getInitials = (name: string | null | undefined): string => {
     .toUpperCase()
     .slice(0, 2);
 };
+
+function formatDate(d: string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function isSuspended(status: string | undefined) {
+  return status === "suspended" || status === "compliance_suspended";
+}
 
 function RoleBadge({ role }: { role: string }) {
   const r = (role || "").toLowerCase();
@@ -69,6 +112,8 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export default function MembersPage() {
   const params = useParams<{ orgId?: string }>();
   const { orgId: fallbackOrgId } = useCurrentOrganizationId();
@@ -76,123 +121,269 @@ export default function MembersPage() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
-  const [search, setSearch] = useState("");
+  // ── Member list ──────────────────────────────────────────────────────────────
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
-  // Invite dialog
-  const [showInvite, setShowInvite] = useState(false);
+  // ── User detail drawer ───────────────────────────────────────────────────────
+  const [selectedMember, setSelectedMember] = useState<OrganizationMember | null>(null);
+  const [detailUser, setDetailUser] = useState<ApiUser | null>(null);
+  const [userSshKeys, setUserSshKeys] = useState<SSHKey[]>([]);
+  const [isDrawerLoading, setIsDrawerLoading] = useState(false);
+
+  // ── Suspend / Unsuspend ──────────────────────────────────────────────────────
+  const [isSuspending, setIsSuspending] = useState(false);
+  const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
+
+  // ── Role update (via drawer) ─────────────────────────────────────────────────
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+
+  // ── Admin add SSH key dialog ─────────────────────────────────────────────────
+  const [showAddKey, setShowAddKey] = useState(false);
+  const [addKeyPublicKey, setAddKeyPublicKey] = useState("");
+  const [addKeyDescription, setAddKeyDescription] = useState("");
+  const [isAddingKey, setIsAddingKey] = useState(false);
+  const [addKeyError, setAddKeyError] = useState<string | null>(null);
+
+  // ── Change role dialog (from row dropdown) ───────────────────────────────────
+  const [changeRoleMember, setChangeRoleMember] = useState<OrganizationMember | null>(null);
+  const [newRole, setNewRole] = useState("member");
+  const [isChangingRole, setIsChangingRole] = useState(false);
+
+  // ── Remove member ────────────────────────────────────────────────────────────
+  const [removeMember, setRemoveMember] = useState<OrganizationMember | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // ── Invite ───────────────────────────────────────────────────────────────────
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  // Invite link dialog (shown when email is not configured)
+  // Invite link dialog (when SMTP not configured)
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkEmail, setInviteLinkEmail] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
 
-  // Change role dialog
-  const [changeRoleMember, setChangeRoleMember] = useState<OrganizationMember | null>(null);
-  const [newRole, setNewRole] = useState("member");
-  const [isChangingRole, setIsChangingRole] = useState(false);
-
-  // Pending invites
+  // ── Pending invites ──────────────────────────────────────────────────────────
   const [invites, setInvites] = useState<OrgInvite[]>([]);
   const [isInvitesLoading, setIsInvitesLoading] = useState(false);
   const [cancellingInviteId, setCancellingInviteId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setError(null);
-    setMembers([]);
+  // ── Transfer ownership ───────────────────────────────────────────────────────
+  const [showTransferOwnership, setShowTransferOwnership] = useState(false);
+  const [isTransferringOwnership, setIsTransferringOwnership] = useState(false);
+
+  // ── Hard delete ──────────────────────────────────────────────────────────────
+  const [showHardDelete, setShowHardDelete] = useState(false);
+  const [hardDeleteConfirmEmail, setHardDeleteConfirmEmail] = useState("");
+  const [isHardDeleting, setIsHardDeleting] = useState(false);
+
+  // ── Fetch members ────────────────────────────────────────────────────────────
+  const fetchMembers = useCallback(async () => {
     if (!orgId) {
       setIsLoading(false);
       return;
     }
-
-    const fetchMembers = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await api.organizations.getMembers(orgId);
-        setMembers(response.members || []);
-      } catch (err) {
-        console.error("Failed to fetch members:", err);
-        setError("Failed to load members. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    const fetchInvites = async () => {
-      try {
-        setIsInvitesLoading(true);
-        const res = await api.organizations.getInvites(orgId);
-        setInvites(res.invites || []);
-      } catch (err) {
-        console.error("Failed to fetch invites:", err);
-      } finally {
-        setIsInvitesLoading(false);
-      }
-    };
-
-    fetchMembers();
-    fetchInvites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await api.organizations.getMembers(orgId);
+      setMembers(response.members || []);
+    } catch (err) {
+      console.error("Failed to fetch members:", err);
+      setError("Failed to load members. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   }, [orgId]);
 
-  const filteredMembers = members.filter((member) => {
-    const searchLower = search.toLowerCase();
-    return (
-      (member.user?.full_name?.toLowerCase().includes(searchLower) ?? false) ||
-      (member.user?.email.toLowerCase().includes(searchLower) ?? false)
-    );
-  });
-
-  const handleInvite = async () => {
+  const fetchInvites = useCallback(async () => {
     if (!orgId) return;
-    setInviteError(null);
-    if (!inviteEmail.trim()) {
-      setInviteError("Email is required.");
-      return;
-    }
-    setIsInviting(true);
+    setIsInvitesLoading(true);
     try {
-      const res = await api.organizations.createInvite(orgId, inviteEmail.trim(), inviteRole);
-      const link = res.invite?.invite_link;
-      setShowInvite(false);
-      // Refresh invites list
-      const updated = await api.organizations.getInvites(orgId);
-      setInvites(updated.invites || []);
-      if (link) {
-        // Email delivery not configured — show copyable link as fallback
-        setInviteLink(link);
-        setInviteLinkEmail(inviteEmail.trim());
-      } else {
-        // Email was sent successfully
-        toast({ title: "Invitation sent", description: `Invite email sent to ${inviteEmail.trim()}.` });
-      }
-      setInviteEmail("");
-      setInviteRole("member");
+      const res = await api.organizations.getInvites(orgId);
+      setInvites(res.invites || []);
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : "Failed to send invitation.");
+      console.error("Failed to fetch invites:", err);
     } finally {
-      setIsInviting(false);
+      setIsInvitesLoading(false);
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    setMembers([]);
+    setError(null);
+    fetchMembers();
+    fetchInvites();
+  }, [fetchMembers, fetchInvites]);
+
+  // ── Open user drawer ─────────────────────────────────────────────────────────
+  const openMemberDrawer = async (member: OrganizationMember) => {
+    setSelectedMember(member);
+    setDetailUser(null);
+    setUserSshKeys([]);
+    setIsDrawerLoading(true);
+    try {
+      const data = await api.admin.getUser(member.user_id);
+      setDetailUser(data.user);
+      setUserSshKeys(data.ssh_keys);
+    } catch {
+      // Non-fatal — drawer still shows member info
+    } finally {
+      setIsDrawerLoading(false);
     }
   };
 
+  const closeDrawer = () => {
+    setSelectedMember(null);
+    setDetailUser(null);
+    setUserSshKeys([]);
+  };
+
+  // ── Role change (drawer inline select) ──────────────────────────────────────
+  const handleDrawerRoleChange = async (newRoleValue: string) => {
+    if (!orgId || !selectedMember) return;
+    setIsUpdatingRole(true);
+    try {
+      const updated = await api.organizations.updateMemberRole(orgId, selectedMember.user_id, newRoleValue.toLowerCase());
+      const updatedRole = updated.member.role;
+      setSelectedMember((prev) => prev ? { ...prev, role: updatedRole } : prev);
+      setMembers((prev) =>
+        prev.map((m) => m.id === selectedMember.id ? { ...m, role: updatedRole } : m)
+      );
+      toast({
+        title: "Role updated",
+        description: `${selectedMember.user?.full_name || selectedMember.user?.email} is now a ${updatedRole}.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to update role",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setIsUpdatingRole(false);
+    }
+  };
+
+  // ── Suspend ──────────────────────────────────────────────────────────────────
+  const handleSuspend = async () => {
+    if (!selectedMember) return;
+    setIsSuspending(true);
+    try {
+      const data = await api.admin.suspendUser(selectedMember.user_id);
+      const newStatus = data.user.status;
+      setDetailUser((prev) => prev ? { ...prev, status: newStatus } : prev);
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === selectedMember.id
+            ? { ...m, user: m.user ? { ...m.user, status: newStatus } : m.user }
+            : m
+        )
+      );
+      setSelectedMember((prev) =>
+        prev ? { ...prev, user: prev.user ? { ...prev.user, status: newStatus } : prev.user } : prev
+      );
+      setShowSuspendConfirm(false);
+      toast({
+        title: "User suspended",
+        description: `${selectedMember.user?.full_name || selectedMember.user?.email} has been suspended.`,
+      });
+    } catch (err) {
+      setShowSuspendConfirm(false);
+      if (err instanceof ApiError && err.type === "OWNER_PROTECTION") {
+        toast({
+          variant: "destructive",
+          title: "Cannot suspend organization owner",
+          description: "Transfer ownership to another member before suspending this account.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to suspend user",
+          description: err instanceof ApiError ? err.message : "Something went wrong.",
+        });
+      }
+    } finally {
+      setIsSuspending(false);
+    }
+  };
+
+  const handleUnsuspend = async () => {
+    if (!selectedMember) return;
+    setIsSuspending(true);
+    try {
+      const data = await api.admin.unsuspendUser(selectedMember.user_id);
+      const newStatus = data.user.status;
+      setDetailUser((prev) => prev ? { ...prev, status: newStatus } : prev);
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === selectedMember.id
+            ? { ...m, user: m.user ? { ...m.user, status: newStatus } : m.user }
+            : m
+        )
+      );
+      setSelectedMember((prev) =>
+        prev ? { ...prev, user: prev.user ? { ...prev.user, status: newStatus } : prev.user } : prev
+      );
+      toast({
+        title: "User unsuspended",
+        description: `${selectedMember.user?.full_name || selectedMember.user?.email} is now active.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to unsuspend user",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setIsSuspending(false);
+    }
+  };
+
+  // ── Admin add SSH key ────────────────────────────────────────────────────────
+  const handleAddKey = async () => {
+    if (!selectedMember) return;
+    setAddKeyError(null);
+    if (!addKeyPublicKey.trim()) {
+      setAddKeyError("Public key is required.");
+      return;
+    }
+    setIsAddingKey(true);
+    try {
+      const key = await api.ssh.adminAddKey(
+        selectedMember.user_id,
+        addKeyPublicKey.trim(),
+        addKeyDescription.trim() || undefined
+      );
+      setUserSshKeys((prev) => [...prev, key]);
+      toast({ title: "SSH key added", description: `Key added for ${selectedMember.user?.email}` });
+      setShowAddKey(false);
+      setAddKeyPublicKey("");
+      setAddKeyDescription("");
+    } catch (err) {
+      setAddKeyError(err instanceof ApiError ? err.message : "Failed to add key.");
+    } finally {
+      setIsAddingKey(false);
+    }
+  };
+
+  // ── Change role (row dropdown) ───────────────────────────────────────────────
   const handleChangeRole = async () => {
     if (!orgId || !changeRoleMember) return;
     setIsChangingRole(true);
     try {
       const updated = await api.organizations.updateMemberRole(orgId, changeRoleMember.user_id, newRole.toLowerCase());
+      const updatedRole = updated.member.role;
       setMembers((prev) =>
-        prev.map((m) => (m.id === changeRoleMember.id ? { ...m, role: updated.member.role } : m))
+        prev.map((m) => m.id === changeRoleMember.id ? { ...m, role: updatedRole } : m)
       );
       toast({
         title: "Role updated",
-        description: `${changeRoleMember.user?.full_name || changeRoleMember.user?.email} is now a ${newRole}.`,
+        description: `${changeRoleMember.user?.full_name || changeRoleMember.user?.email} is now a ${updatedRole}.`,
       });
       setChangeRoleMember(null);
     } catch (err) {
@@ -206,31 +397,126 @@ export default function MembersPage() {
     }
   };
 
-  const handleRemoveMember = async (member: OrganizationMember) => {
-    if (!orgId) return;
+  // ── Remove member ────────────────────────────────────────────────────────────
+  const handleRemoveMember = async () => {
+    if (!orgId || !removeMember) return;
+    setIsRemoving(true);
     try {
-      await api.organizations.removeMember(orgId, member.user_id);
-      setMembers((prev) => prev.filter((m) => m.id !== member.id));
+      await api.organizations.removeMember(orgId, removeMember.user_id);
+      setMembers((prev) => prev.filter((m) => m.id !== removeMember.id));
       toast({
         title: "Member removed",
-        description: `${member.user?.full_name || member.user?.email} has been removed.`,
+        description: `${removeMember.user?.full_name || removeMember.user?.email} has been removed.`,
       });
+      setRemoveMember(null);
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Failed to remove member",
         description: err instanceof ApiError ? err.message : "Something went wrong.",
       });
+    } finally {
+      setIsRemoving(false);
     }
   };
 
+  // ── Transfer ownership ───────────────────────────────────────────────────────
+  const handleTransferOwnership = async () => {
+    if (!orgId || !selectedMember) return;
+    setIsTransferringOwnership(true);
+    try {
+      await api.organizations.transferOwnership(orgId, selectedMember.user_id);
+      await fetchMembers();
+      setShowTransferOwnership(false);
+      closeDrawer();
+      toast({
+        title: "Ownership transferred",
+        description: `${selectedMember.user?.full_name || selectedMember.user?.email} is now the organization owner.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to transfer ownership",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setIsTransferringOwnership(false);
+    }
+  };
+
+  // ── Hard delete ──────────────────────────────────────────────────────────────
+  const handleHardDelete = async () => {
+    if (!selectedMember) return;
+    setIsHardDeleting(true);
+    try {
+      const result = await api.admin.hardDeleteUser(selectedMember.user_id);
+      setMembers((prev) => prev.filter((m) => m.id !== selectedMember.id));
+      setShowHardDelete(false);
+      closeDrawer();
+      toast({
+        title: "User permanently deleted",
+        description: `${result.deleted_user_email} — ${result.certs_revoked} cert(s) revoked, ${result.ssh_keys_deleted} key(s) deleted.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete user",
+        description: err instanceof ApiError ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setIsHardDeleting(false);
+    }
+  };
+
+  // ── Invite ───────────────────────────────────────────────────────────────────
+  const handleInvite = async () => {
+    if (!orgId) return;
+    setInviteError(null);
+    if (!inviteEmail.trim()) {
+      setInviteError("Email is required.");
+      return;
+    }
+    setIsInviting(true);
+    try {
+      const res = await api.organizations.createInvite(orgId, inviteEmail.trim(), inviteRole);
+      const link = res.invite?.invite_link;
+      await fetchInvites();
+      if (link) {
+        setInviteLink(link);
+        setInviteLinkEmail(inviteEmail.trim());
+      } else {
+        toast({ title: "Invitation sent", description: `Invite email sent to ${inviteEmail.trim()}.` });
+      }
+      setInviteEmail("");
+      setInviteRole("member");
+    } catch (err) {
+      setInviteError(err instanceof ApiError ? err.message : "Failed to send invitation.");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  // ── Filtered members ─────────────────────────────────────────────────────────
+  const filteredMembers = members.filter((m) => {
+    const q = search.toLowerCase();
+    return (
+      (m.user?.full_name?.toLowerCase().includes(q) ?? false) ||
+      (m.user?.email.toLowerCase().includes(q) ?? false)
+    );
+  });
+
+  // ── Derived status for drawer ────────────────────────────────────────────────
+  const drawerStatus = detailUser?.status ?? selectedMember?.user?.status;
+  const drawerActivated = detailUser?.activated ?? undefined;
+  const drawerLastLogin = detailUser?.last_login_at ?? selectedMember?.user?.last_login_at ?? null;
+  const drawerCreatedAt = detailUser?.created_at ?? selectedMember?.user?.created_at ?? selectedMember?.created_at ?? null;
+
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="page-container">
       <div className="page-header">
         <h1 className="page-title">Members</h1>
-        <p className="page-description">
-          Manage organization members and invitations
-        </p>
+        <p className="page-description">Manage organization members and invitations</p>
       </div>
 
       <Tabs defaultValue="members" className="w-full">
@@ -239,16 +525,21 @@ export default function MembersPage() {
             Members ({members.length})
           </TabsTrigger>
           <TabsTrigger value="invites">
-            Invitations {invites.length > 0 && <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">{invites.length}</span>}
+            Invitations{invites.length > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                {invites.length}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
 
+        {/* ── Members tab ────────────────────────────────────────────────────── */}
         <TabsContent value="members">
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search members..."
+                placeholder="Search members…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10 max-w-sm"
@@ -257,87 +548,122 @@ export default function MembersPage() {
           </div>
 
           <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <User className="w-4 h-4" />
+                Members
+                {!isLoading && (
+                  <Badge variant="secondary" className="ml-1">{members.length}</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Click a member to view details, manage their role, or administer SSH keys
+              </CardDescription>
+            </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
                 <div className="flex items-center justify-center p-8">
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-muted-foreground">Loading members...</span>
+                  <span className="ml-2 text-muted-foreground">Loading members…</span>
                 </div>
               ) : error ? (
-                <div className="p-8 text-center text-destructive">
-                  {error}
-                </div>
+                <div className="p-8 text-center text-destructive">{error}</div>
               ) : filteredMembers.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  No members found
-                </div>
+                <div className="p-8 text-center text-muted-foreground">No members found</div>
               ) : (
                 <div className="divide-y">
-                  {filteredMembers.map((member) => (
-                    <div key={member.id} className="p-4 flex items-center gap-4">
-                      <Avatar className="w-10 h-10">
-                        <AvatarImage src={member.user?.avatar_url || undefined} />
-                        <AvatarFallback className="bg-primary text-primary-foreground">
-                          {getInitials(member.user?.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground truncate">
-                            {member.user?.full_name || member.user?.email}
+                  {filteredMembers.map((member) => {
+                    const memberStatus = member.user?.status;
+                    const suspended = isSuspended(memberStatus);
+                    const isOwner = (member.role || "").toLowerCase() === "owner";
+                    const isSelf = member.user?.id === currentUser?.id;
+                    return (
+                      <button
+                        key={member.id}
+                        className="w-full flex items-center gap-4 p-4 text-left hover:bg-accent/50 transition-colors"
+                        onClick={() => openMemberDrawer(member)}
+                      >
+                        <Avatar className="w-10 h-10 flex-shrink-0">
+                          <AvatarImage src={member.user?.avatar_url || undefined} />
+                          <AvatarFallback className="bg-primary text-primary-foreground">
+                            {getInitials(member.user?.full_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-foreground truncate">
+                              {member.user?.full_name || member.user?.email}
+                            </p>
+                            <RoleBadge role={member.role} />
+                            {suspended && (
+                              <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50">
+                                <Ban className="w-3 h-3 mr-1" />Suspended
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {member.user?.email}
                           </p>
-                          <RoleBadge role={member.role} />
                         </div>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {member.user?.email}
-                        </p>
-                      </div>
-                      {/* Actions — hide for self and for owners (can't modify owner here) */}
-                      {member.user?.id !== currentUser?.id && (member.role || "").toLowerCase() !== "owner" && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setChangeRoleMember(member);
-                                setNewRole((member.role || "member").toLowerCase());
-                              }}
+                        {/* Row action menu — hide for owners and self */}
+                        {!isSelf && !isOwner && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              asChild
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <Shield className="w-4 h-4 mr-2" />
-                              Change role
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => handleRemoveMember(member)}
-                            >
-                              Remove member
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  ))}
+                              <Button variant="ghost" size="icon" className="flex-shrink-0">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setChangeRoleMember(member);
+                                  setNewRole((member.role || "member").toLowerCase());
+                                }}
+                              >
+                                <Shield className="w-4 h-4 mr-2" />
+                                Change role
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRemoveMember(member);
+                                }}
+                              >
+                                Remove member
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                        <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* ── Invitations tab ─────────────────────────────────────────────────── */}
         <TabsContent value="invites">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Pending invites list */}
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold">Pending invitations</h3>
-                  <span className="text-sm text-muted-foreground">{isInvitesLoading ? 'Loading...' : `${invites.length}`}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {isInvitesLoading ? "Loading…" : invites.length}
+                  </span>
                 </div>
                 {isInvitesLoading ? (
-                  <div className="p-4 text-center text-muted-foreground">Loading invites...</div>
+                  <div className="p-4 text-center text-muted-foreground">Loading invites…</div>
                 ) : invites.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground">No pending invitations</div>
                 ) : (
@@ -346,25 +672,36 @@ export default function MembersPage() {
                       <div key={inv.id} className="py-3 flex items-center justify-between gap-4">
                         <div>
                           <div className="font-medium">{inv.email}</div>
-                          <div className="text-sm text-muted-foreground">Role: {inv.role} • Expires: {new Date(inv.expires_at).toLocaleString()}</div>
+                          <div className="text-sm text-muted-foreground">
+                            Role: {inv.role} · Expires: {new Date(inv.expires_at).toLocaleString()}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => { void (async () => {
-                            if (!orgId) return;
-                            setCancellingInviteId(inv.id);
-                            try {
-                              await api.organizations.cancelInvite(orgId, inv.id);
-                              setInvites((prev) => prev.filter((i) => i.id !== inv.id));
-                              toast({ title: 'Invite cancelled' });
-                            } catch (err) {
-                              toast({ variant: 'destructive', title: 'Failed to cancel invite' });
-                            } finally {
-                              setCancellingInviteId(null);
-                            }
-                          })() }}>
-                            {cancellingInviteId === inv.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cancel'}
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={cancellingInviteId === inv.id}
+                          onClick={() => {
+                            void (async () => {
+                              if (!orgId) return;
+                              setCancellingInviteId(inv.id);
+                              try {
+                                await api.organizations.cancelInvite(orgId, inv.id);
+                                setInvites((prev) => prev.filter((i) => i.id !== inv.id));
+                                toast({ title: "Invite cancelled" });
+                              } catch {
+                                toast({ variant: "destructive", title: "Failed to cancel invite" });
+                              } finally {
+                                setCancellingInviteId(null);
+                              }
+                            })();
+                          }}
+                        >
+                          {cancellingInviteId === inv.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Cancel"
+                          )}
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -372,13 +709,12 @@ export default function MembersPage() {
               </CardContent>
             </Card>
 
+            {/* Invite form */}
             <Card>
               <CardContent className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Send an invitation</h3>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold">Send an invitation</h3>
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -405,7 +741,11 @@ export default function MembersPage() {
                   {inviteError && (
                     <p className="text-sm text-destructive">{inviteError}</p>
                   )}
-                  <Button onClick={handleInvite} disabled={isInviting || !inviteEmail.trim()} className="w-full">
+                  <Button
+                    onClick={handleInvite}
+                    disabled={isInviting || !inviteEmail.trim()}
+                    className="w-full"
+                  >
                     {isInviting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     <Mail className="w-4 h-4 mr-2" />
                     Send invitation
@@ -417,53 +757,339 @@ export default function MembersPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Invite link dialog (shown when SMTP not configured) ────────────────── */}
-      <Dialog open={!!inviteLink} onOpenChange={(o) => { if (!o) { setInviteLink(null); setLinkCopied(false); } }}>
-        <DialogContent className="sm:max-w-lg">
+      {/* ── User detail drawer ──────────────────────────────────────────────────── */}
+      <Sheet open={!!selectedMember} onOpenChange={(open) => { if (!open) closeDrawer(); }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {selectedMember && (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-3">
+                  <Avatar className="w-9 h-9">
+                    <AvatarImage src={selectedMember.user?.avatar_url || undefined} />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                      {getInitials(selectedMember.user?.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span>{selectedMember.user?.full_name || selectedMember.user?.email}</span>
+                </SheetTitle>
+                <SheetDescription>{selectedMember.user?.email}</SheetDescription>
+              </SheetHeader>
+
+              {isDrawerLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  {/* Basic info */}
+                  <div className="space-y-3 mb-6">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <span className="text-muted-foreground">Status</span>
+                      <span className="flex items-center gap-1">
+                        {isSuspended(drawerStatus) ? (
+                          <>
+                            <Ban className="w-4 h-4 text-red-500" />
+                            <span className="text-red-600 font-medium">
+                              Suspended{drawerStatus === "compliance_suspended" ? " (compliance)" : ""}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                            <span className="text-green-600">Active</span>
+                          </>
+                        )}
+                      </span>
+                      <span className="text-muted-foreground">Joined</span>
+                      <span>{formatDate(drawerCreatedAt)}</span>
+                      {drawerActivated !== undefined && (
+                        <>
+                          <span className="text-muted-foreground">Activated</span>
+                          <span className="flex items-center gap-1">
+                            {drawerActivated === false ? (
+                              <><XCircle className="w-4 h-4 text-amber-500" /> No</>
+                            ) : (
+                              <><CheckCircle className="w-4 h-4 text-green-500" /> Yes</>
+                            )}
+                          </span>
+                        </>
+                      )}
+                      <span className="text-muted-foreground">Last login</span>
+                      <span>{formatDate(drawerLastLogin)}</span>
+                    </div>
+                  </div>
+
+                  {/* Suspend / Unsuspend */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-6 p-4 border rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Ban className="w-4 h-4" />
+                        Account Access
+                      </h3>
+                      {isSuspended(drawerStatus) ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                            {drawerStatus === "compliance_suspended"
+                              ? "This account is suspended due to MFA compliance. The user cannot request certificates."
+                              : "This account is suspended. The user cannot request certificates."}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleUnsuspend}
+                            disabled={isSuspending}
+                            className="text-green-600 border-green-300 hover:bg-green-50"
+                          >
+                            {isSuspending ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <UserCheck className="w-4 h-4 mr-2" />
+                            )}
+                            Restore account
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                            Suspending blocks this user from requesting SSH certificates.
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowSuspendConfirm(true)}
+                            disabled={isSuspending}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            <Ban className="w-4 h-4 mr-2" />
+                            Suspend account
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Role management */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-6 p-4 border rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Organization Role
+                      </h3>
+                      {(selectedMember.role || "").toLowerCase() === "owner" ? (
+                        <p className="text-xs text-muted-foreground">
+                          Owner role cannot be changed here. Transfer ownership from organization settings.
+                        </p>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <Select
+                            value={(selectedMember.role || "member").toLowerCase()}
+                            onValueChange={handleDrawerRoleChange}
+                            disabled={isUpdatingRole}
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {isUpdatingRole && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Transfer Ownership — shown when current user is owner and target is not */}
+                  {selectedMember.user?.id !== currentUser?.id &&
+                    (selectedMember.role || "").toLowerCase() !== "owner" &&
+                    members.some(
+                      (m) => m.user?.id === currentUser?.id && (m.role || "").toLowerCase() === "owner"
+                    ) && (
+                    <div className="mb-6 p-4 border rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Crown className="w-4 h-4" />
+                        Transfer Ownership
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Make this member the new organization owner. You will be demoted to admin.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowTransferOwnership(true)}
+                        className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                      >
+                        <Crown className="w-4 h-4 mr-2" />
+                        Transfer ownership to this member
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Danger zone — Hard delete */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-6 p-4 border border-destructive/30 rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2 text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                        Danger Zone
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Permanently delete this user account. This cannot be undone — all SSH keys and certificates will be revoked.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setHardDeleteConfirmEmail(""); setShowHardDelete(true); }}
+                        className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Permanently delete account
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* SSH Keys */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Key className="w-4 h-4" />
+                        SSH Keys
+                      </h3>
+                      <Button size="sm" variant="outline" onClick={() => setShowAddKey(true)}>
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add key
+                      </Button>
+                    </div>
+                    {userSshKeys.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground text-sm">
+                        No SSH keys registered
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {userSshKeys.map((k) => (
+                          <div key={k.id} className="p-3 border rounded-lg text-sm">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium">
+                                {k.description || <em className="text-muted-foreground">No description</em>}
+                              </span>
+                              {k.verified ? (
+                                <Badge className="bg-green-500/10 text-green-600 border-0 text-xs">
+                                  <CheckCircle className="w-3 h-3 mr-1" />Verified
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                                  Unverified
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground font-mono truncate">
+                              {k.fingerprint ?? (k.public_key.slice(0, 64) + "…")}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Added {formatDate(k.created_at)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Admin add SSH key dialog ──────────────────────────────────────────── */}
+      <Dialog
+        open={showAddKey}
+        onOpenChange={(open) => {
+          setShowAddKey(open);
+          if (!open) { setAddKeyError(null); setAddKeyPublicKey(""); setAddKeyDescription(""); }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ExternalLink className="w-4 h-4" />
-              Share this invite link
-            </DialogTitle>
+            <DialogTitle>Add SSH Key for {selectedMember?.user?.email}</DialogTitle>
             <DialogDescription>
-              Email delivery is not configured. Share this link directly with <strong>{inviteLinkEmail}</strong>.
+              Add an SSH public key on behalf of this user (admin action).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
-              <span className="flex-1 text-xs text-muted-foreground break-all font-mono">{inviteLink}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="shrink-0"
-                onClick={() => {
-                  if (inviteLink) {
-                    navigator.clipboard.writeText(inviteLink);
-                    setLinkCopied(true);
-                    setTimeout(() => setLinkCopied(false), 2000);
-                  }
-                }}
-              >
-                {linkCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </Button>
+          <div className="space-y-4 py-2">
+            {addKeyError && (
+              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{addKeyError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Public key</Label>
+              <Textarea
+                placeholder="ssh-ed25519 AAAA..."
+                value={addKeyPublicKey}
+                onChange={(e) => setAddKeyPublicKey(e.target.value)}
+                className="font-mono text-xs min-h-[80px]"
+                disabled={isAddingKey}
+              />
             </div>
-            <p className="text-xs text-muted-foreground">
-              This link expires in 7 days. The recipient must already have an account or will be prompted to create one.
-            </p>
+            <div className="space-y-2">
+              <Label>
+                Description <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                placeholder="Laptop key"
+                value={addKeyDescription}
+                onChange={(e) => setAddKeyDescription(e.target.value)}
+                disabled={isAddingKey}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => { setInviteLink(null); setLinkCopied(false); }}>Done</Button>
+            <Button variant="outline" onClick={() => setShowAddKey(false)} disabled={isAddingKey}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddKey} disabled={isAddingKey || !addKeyPublicKey.trim()}>
+              {isAddingKey && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Add key
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Change role dialog ─────────────────────────────────────────────────── */}
+      {/* ── Suspend confirmation dialog ───────────────────────────────────────── */}
+      <Dialog open={showSuspendConfirm} onOpenChange={setShowSuspendConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Suspend account?
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{selectedMember?.user?.full_name || selectedMember?.user?.email}</strong> will be
+              blocked from requesting SSH certificates. You can restore their access at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSuspendConfirm(false)}
+              disabled={isSuspending}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleSuspend} disabled={isSuspending}>
+              {isSuspending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Suspend
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Change role dialog (row dropdown) ────────────────────────────────── */}
       <Dialog open={!!changeRoleMember} onOpenChange={(o) => { if (!o) setChangeRoleMember(null); }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Change role</DialogTitle>
             <DialogDescription>
-              Update the role for {changeRoleMember?.user?.full_name || changeRoleMember?.user?.email}
+              Update the role for{" "}
+              {changeRoleMember?.user?.full_name || changeRoleMember?.user?.email}
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
@@ -479,13 +1105,181 @@ export default function MembersPage() {
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setChangeRoleMember(null)} disabled={isChangingRole}>
+            <Button
+              variant="outline"
+              onClick={() => setChangeRoleMember(null)}
+              disabled={isChangingRole}
+            >
               Cancel
             </Button>
             <Button onClick={handleChangeRole} disabled={isChangingRole}>
               {isChangingRole && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Save
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Remove member confirmation ────────────────────────────────────────── */}
+      <Dialog open={!!removeMember} onOpenChange={(o) => { if (!o) setRemoveMember(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Remove member?
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{removeMember?.user?.full_name || removeMember?.user?.email}</strong> will lose
+              access to this organization immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemoveMember(null)}
+              disabled={isRemoving}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleRemoveMember} disabled={isRemoving}>
+              {isRemoving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Transfer ownership confirmation ───────────────────────────────── */}
+      <Dialog open={showTransferOwnership} onOpenChange={setShowTransferOwnership}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-purple-600">
+              <Crown className="w-5 h-5" />
+              Transfer ownership?
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{selectedMember?.user?.full_name || selectedMember?.user?.email}</strong> will
+              become the new organization owner. You will be demoted to admin and lose the ability to
+              perform owner-only actions.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowTransferOwnership(false)}
+              disabled={isTransferringOwnership}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTransferOwnership}
+              disabled={isTransferringOwnership}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              {isTransferringOwnership && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Transfer ownership
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Hard delete confirmation ──────────────────────────────────────────── */}
+      <Dialog
+        open={showHardDelete}
+        onOpenChange={(open) => { setShowHardDelete(open); if (!open) setHardDeleteConfirmEmail(""); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Permanently delete account?
+            </DialogTitle>
+            <DialogDescription>
+              This will <strong>permanently</strong> delete{" "}
+              <strong>{selectedMember?.user?.full_name || selectedMember?.user?.email}</strong>,
+              revoke all their SSH certificates, and remove all their SSH keys. This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Label className="text-sm">
+              Type <span className="font-mono font-semibold">{selectedMember?.user?.email}</span> to confirm
+            </Label>
+            <Input
+              value={hardDeleteConfirmEmail}
+              onChange={(e) => setHardDeleteConfirmEmail(e.target.value)}
+              placeholder={selectedMember?.user?.email ?? ""}
+              disabled={isHardDeleting}
+              className="font-mono"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowHardDelete(false)}
+              disabled={isHardDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleHardDelete}
+              disabled={isHardDeleting || hardDeleteConfirmEmail !== selectedMember?.user?.email}
+            >
+              {isHardDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Invite link dialog ────────────────────────────────────────────────── */}
+      <Dialog
+        open={!!inviteLink}
+        onOpenChange={(o) => { if (!o) { setInviteLink(null); setLinkCopied(false); } }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ExternalLink className="w-4 h-4" />
+              Share this invite link
+            </DialogTitle>
+            <DialogDescription>
+              Email delivery is not configured. Share this link directly with{" "}
+              <strong>{inviteLinkEmail}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+              <span className="flex-1 text-xs text-muted-foreground break-all font-mono">
+                {inviteLink}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                onClick={() => {
+                  if (inviteLink) {
+                    navigator.clipboard.writeText(inviteLink);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  }
+                }}
+              >
+                {linkCopied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This link expires in 7 days. The recipient must already have an account or will be
+              prompted to create one.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { setInviteLink(null); setLinkCopied(false); }}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

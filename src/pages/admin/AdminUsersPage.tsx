@@ -13,6 +13,7 @@ import {
   Ban,
   UserCheck,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,6 +123,11 @@ export default function AdminUsersPage() {
   // Suspend / unsuspend
   const [isSuspending, setIsSuspending] = useState(false);
   const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
+
+  // Hard delete
+  const [showHardDelete, setShowHardDelete] = useState(false);
+  const [hardDeleteConfirmEmail, setHardDeleteConfirmEmail] = useState("");
+  const [isHardDeleting, setIsHardDeleting] = useState(false);
 
   // ── Fetch users ─────────────────────────────────────────────────────────────
   const fetchUsers = useCallback(async (q: string, pg: number) => {
@@ -233,7 +239,16 @@ export default function AdminUsersPage() {
       setShowSuspendConfirm(false);
       toast({ title: "User suspended", description: `${selectedUser.full_name || selectedUser.email} has been suspended.` });
     } catch (err) {
-      toast({ variant: "destructive", title: "Failed to suspend user", description: err instanceof ApiError ? err.message : "Something went wrong" });
+      setShowSuspendConfirm(false);
+      if (err instanceof ApiError && err.type === "OWNER_PROTECTION") {
+        toast({
+          variant: "destructive",
+          title: "Cannot suspend organization owner",
+          description: "Transfer ownership to another member before suspending this account.",
+        });
+      } else {
+        toast({ variant: "destructive", title: "Failed to suspend user", description: err instanceof ApiError ? err.message : "Something went wrong" });
+      }
     } finally {
       setIsSuspending(false);
     }
@@ -252,6 +267,31 @@ export default function AdminUsersPage() {
       toast({ variant: "destructive", title: "Failed to unsuspend user", description: err instanceof ApiError ? err.message : "Something went wrong" });
     } finally {
       setIsSuspending(false);
+    }
+  };
+
+  // ── Hard delete user ─────────────────────────────────────────────────────────
+  const handleHardDelete = async () => {
+    if (!selectedUser) return;
+    setIsHardDeleting(true);
+    try {
+      const result = await api.admin.hardDeleteUser(selectedUser.id);
+      setUsers((prev) => prev.filter((u) => u.id !== selectedUser.id));
+      setTotal((t) => t - 1);
+      setShowHardDelete(false);
+      setSelectedUser(null);
+      toast({
+        title: "User permanently deleted",
+        description: `${result.deleted_user_email} — ${result.certs_revoked} cert(s) revoked, ${result.ssh_keys_deleted} key(s) deleted.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete user",
+        description: err instanceof ApiError ? err.message : "Something went wrong",
+      });
+    } finally {
+      setIsHardDeleting(false);
     }
   };
 
@@ -540,6 +580,28 @@ export default function AdminUsersPage() {
                   </div>
                 )}
               </div>
+
+              {/* Danger zone — Hard delete */}
+              {selectedUser.id !== currentUser?.id && (
+                <div className="mt-6 p-4 border border-destructive/30 rounded-lg space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2 text-destructive">
+                    <Trash2 className="w-4 h-4" />
+                    Danger Zone
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete this account. This cannot be undone — all SSH keys and certificates will be revoked immediately.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setHardDeleteConfirmEmail(""); setShowHardDelete(true); }}
+                    className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Permanently delete account
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </SheetContent>
@@ -613,6 +675,55 @@ export default function AdminUsersPage() {
             >
               {isSuspending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Suspend
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Hard delete confirmation ──────────────────────────────────────────── */}
+      <Dialog
+        open={showHardDelete}
+        onOpenChange={(open) => { setShowHardDelete(open); if (!open) setHardDeleteConfirmEmail(""); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Permanently delete account?
+            </DialogTitle>
+            <DialogDescription>
+              This will <strong>permanently</strong> delete{" "}
+              <strong>{selectedUser?.full_name || selectedUser?.email}</strong>,
+              revoke all their SSH certificates, and remove all their SSH keys. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Label className="text-sm">
+              Type <span className="font-mono font-semibold">{selectedUser?.email}</span> to confirm
+            </Label>
+            <Input
+              value={hardDeleteConfirmEmail}
+              onChange={(e) => setHardDeleteConfirmEmail(e.target.value)}
+              placeholder={selectedUser?.email ?? ""}
+              disabled={isHardDeleting}
+              className="font-mono"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowHardDelete(false)}
+              disabled={isHardDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleHardDelete}
+              disabled={isHardDeleting || hardDeleteConfirmEmail !== selectedUser?.email}
+            >
+              {isHardDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete permanently
             </Button>
           </DialogFooter>
         </DialogContent>

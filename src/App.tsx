@@ -18,6 +18,7 @@ import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
 import InviteAcceptPage from "@/pages/auth/InviteAcceptPage";
 import OIDCConsentPage from "@/pages/auth/OIDCConsentPage";
 import OIDCErrorPage from "@/pages/auth/OIDCErrorPage";
+import OIDCLoginPage from "@/pages/auth/OIDCLoginPage";
 import OAuthCallbackPage from "@/pages/auth/OAuthCallbackPage";
 import ActivatePage from "@/pages/auth/ActivatePage";
 
@@ -40,7 +41,6 @@ import DepartmentsPage from "@/pages/org/DepartmentsPage";
 import PrincipalsPage from "@/pages/org/PrincipalsPage";
 import MyMembershipsPage from "@/pages/org/MyMembershipsPage";
 import SystemAuditPage from "@/pages/admin/SystemAuditPage";
-import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import OAuthProvidersPage from "@/pages/admin/OAuthProvidersPage";
 import OrgSetupPage from "@/pages/auth/OrgSetupPage";
 
@@ -76,17 +76,19 @@ const App = () => (
 
 // Separate component so AuthProvider can use useNavigate
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { OrgProvider } from "@/contexts/OrgContext";
 import { Navigate } from "react-router-dom";
 
 /** Redirects already-authenticated users away from guest-only pages (e.g. /login). */
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isOrgMember, isLoading } = useAuth();
-  // Allow authenticated users through to /login when it's a CLI auth request —
-  // LoginPage will immediately forward the existing token to the CLI callback.
+  // Allow authenticated users through to /login when it's a CLI auth request or
+  // an OIDC session — LoginPage will immediately forward the existing token.
   const params = new URLSearchParams(window.location.search);
   const isCli = params.has('cli_token') || params.has('cli_redirect');
+  const isOidcBridge = params.has('oidc_session_id');
   if (isLoading) return null; // wait for auth state to resolve
-  if (isAuthenticated && !isCli) {
+  if (isAuthenticated && !isCli && !isOidcBridge) {
     // If the user hasn't set up an org yet, send them there first
     return <Navigate to={isOrgMember ? "/profile" : "/org-setup"} replace />;
   }
@@ -123,6 +125,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   return (
     <AuthProvider>
+      <OrgProvider>
       <Routes>
         {/* Index redirect */}
         <Route path="/" element={<Index />} />
@@ -136,6 +139,7 @@ function AppRoutes() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/invite" element={<InviteAcceptPage />} />
           <Route path="/consent" element={<OIDCConsentPage />} />
+          <Route path="/oidc-login" element={<OIDCLoginPage />} />
           <Route path="/error" element={<OIDCErrorPage />} />
           <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
           <Route path="/activate" element={<ActivatePage />} />
@@ -169,7 +173,7 @@ function AppRoutes() {
 
           {/* Admin routes — org admin/owner only */}
           <Route path="/admin/audit" element={<RequireAdmin><SystemAuditPage /></RequireAdmin>} />
-          <Route path="/admin/users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />
+          <Route path="/admin/users" element={<Navigate to="/org/members" replace />} />
           <Route path="/admin/oauth" element={<RequireAdmin><OAuthProvidersPage /></RequireAdmin>} />
         </Route>
 
@@ -179,6 +183,7 @@ function AppRoutes() {
 
       {/* Dev tools - only shown in development */}
       <ApiDevTools />
+      </OrgProvider>
     </AuthProvider>
   );
 }

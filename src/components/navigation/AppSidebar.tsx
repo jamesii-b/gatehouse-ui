@@ -56,7 +56,6 @@ const orgAdminNavItems = [
 ];
 
 const adminNavItems = [
-  { title: "Users", url: "/admin/users", icon: Users },
   { title: "Certificate Auth.", url: "/org/cas", icon: ShieldCheck },
   { title: "Org Audit Log", url: "/org/audit", icon: FileText },
   { title: "System Logs",  url: "/admin/audit", icon: ScrollText },

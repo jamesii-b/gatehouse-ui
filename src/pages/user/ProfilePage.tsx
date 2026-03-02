@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mail, Upload, CheckCircle, AlertCircle, Loader2, Bell } from "lucide-react";
+import { Mail, Upload, CheckCircle, AlertCircle, Loader2, Bell, AlertTriangle, Trash2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,9 +7,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError, PendingInvite } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 function ProfileSkeleton() {
   return (
@@ -57,11 +66,16 @@ function ProfileSkeleton() {
 }
 
 export default function ProfilePage() {
-  const { user, isLoading: authLoading, refreshUser } = useAuth();
+  const { user, isLoading: authLoading, refreshUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+
+  // Delete account dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Sync local name state with user data
   useEffect(() => {
@@ -86,6 +100,35 @@ export default function ProfilePage() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      await api.users.deleteMe();
+      toast({ title: "Account deleted", description: "Your account has been deleted." });
+      setDeleteDialogOpen(false);
+      await logout();
+      navigate("/login");
+    } catch (err) {
+      if (err instanceof ApiError && err.type === "USER_IS_SOLE_OWNER") {
+        const orgs: string[] = (err.details?.organizations as string[]) ?? [];
+        toast({
+          title: "Cannot delete account",
+          description: `You are the sole owner of: ${orgs.join(", ")}. Transfer ownership or delete those organizations first.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Deletion failed",
+          description: err instanceof ApiError ? err.message : "An unexpected error occurred.",
+          variant: "destructive",
+        });
+      }
+      setDeleteDialogOpen(false);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -139,6 +182,20 @@ export default function ProfilePage() {
       </div>
 
       <div className="space-y-6">
+        {/* Account Suspended Banner */}
+        {(user.status === "suspended" || user.status === "compliance_suspended") && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-4 text-red-800 dark:border-red-700 dark:bg-red-950/60 dark:text-red-300">
+            <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-sm">Account suspended</p>
+              <p className="text-sm mt-0.5 opacity-90">
+                Your account has been suspended. You cannot perform most actions.
+                Please contact your administrator to resolve this.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Pending Invitations Banner */}
         {pendingInvites.length > 0 && (
           <div className="rounded-lg border border-primary/40 bg-primary/10 p-4 space-y-3">
@@ -250,7 +307,75 @@ export default function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Danger Zone */}
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-base text-destructive flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Danger Zone
+            </CardTitle>
+            <CardDescription>
+              Irreversible actions for your account. Proceed with caution.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div>
+                <p className="text-sm font-medium text-destructive">Delete Account</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Permanently deletes your profile and all associated data. If you own
+                  any organizations you must transfer ownership or delete them first.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete account
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Delete account confirmation dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Delete your account?
+            </DialogTitle>
+            <DialogDescription>
+              Your profile, SSH keys, linked accounts, and session data will be
+              permanently deleted. This action <strong>cannot be undone</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300 space-y-1">
+            <p className="flex items-center gap-2 font-medium">
+              <Building2 className="w-4 h-4" />
+              Organization ownership check
+            </p>
+            <p>
+              If you are the sole owner of any organization that has other members,
+              you must <strong>transfer ownership</strong> to another member or delete
+              those organizations before proceeding.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteAccount} disabled={isDeleting}>
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Yes, delete my account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

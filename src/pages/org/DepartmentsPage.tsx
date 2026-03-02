@@ -344,11 +344,18 @@ function DepartmentMembersPanel({ orgId, deptId }: { orgId: string; deptId: stri
             className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">Select org member to add…</option>
-            {available.map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.user?.full_name || m.user?.email || m.user_id}
-              </option>
-            ))}
+            {available.map((m) => {
+              const email = m.user?.email || "";
+              const name = m.user?.full_name;
+              const label = name && email
+                ? `${name} (${email})`
+                : email || m.user_id;
+              return (
+                <option key={m.user_id} value={m.user_id}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
           <Button size="sm" onClick={handleAdd} disabled={!selectedUserId || isAdding}>
             {isAdding ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <UserPlus className="w-3 h-3 mr-1" />}
