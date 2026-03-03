@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
 import { BannerAlert } from "@/components/auth/BannerAlert";
+import { api, ApiError, tokenManager } from "@/lib/api";
 
-type RegistrationState = "form" | "success" | "disabled";
+type RegistrationState = "form" | "disabled";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -42,22 +43,36 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
-    // Mock registration - will be replaced with actual API call
-    // POST /api/auth/register
-    setTimeout(() => {
-      setIsLoading(false);
-      
-      // Simulate different responses
-      const mockResponse = "success" as RegistrationState | "error";
-      
-      if (mockResponse === "disabled") {
-        setState("disabled");
-      } else if (mockResponse === "error") {
-        setError("An error occurred. Please try again.");
-      } else {
-        setState("success");
+    try {
+      const response = await api.auth.register(email, password, name.trim() || undefined);
+
+      // Store the session token so ProtectedLayout lets the user through
+      if (response.token) {
+        tokenManager.setToken(response.token, response.expires_at ?? null);
       }
-    }, 1000);
+
+      // Navigate to org-setup so the user can name their org or accept an invite
+      navigate("/org-setup", {
+        state: {
+          pendingInvites: response.pending_invites ?? [],
+          isFirstUser: response.is_first_user ?? false,
+        },
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === 409) {
+          setError("An account with this email already exists.");
+        } else if (err.code === 403 || (err.message && err.message.toLowerCase().includes("disabled"))) {
+          setState("disabled");
+        } else {
+          setError(err.message || "An error occurred. Please try again.");
+        }
+      } else {
+        setError("An error occurred. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Registration disabled state
@@ -81,44 +96,6 @@ export default function RegisterPage() {
             Back to sign in
           </Button>
         </Link>
-      </div>
-    );
-  }
-
-  // Success state - email sent
-  if (state === "success") {
-    return (
-      <div className="auth-card text-center">
-        <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-6">
-          <Mail className="w-8 h-8 text-success" />
-        </div>
-
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          Check your email
-        </h1>
-        <p className="text-muted-foreground mt-2 mb-6">
-          We've sent a verification link to <span className="font-medium text-foreground">{email}</span>. 
-          Click the link to verify your account and get started.
-        </p>
-
-        <div className="space-y-3">
-          <Link to="/login">
-            <Button className="w-full">
-              Continue to sign in
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Link>
-        </div>
-
-        <p className="text-sm text-muted-foreground mt-6">
-          Didn't receive the email?{" "}
-          <button 
-            onClick={() => setState("form")}
-            className="text-accent hover:underline font-medium"
-          >
-            Try again
-          </button>
-        </p>
       </div>
     );
   }

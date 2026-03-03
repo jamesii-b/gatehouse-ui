@@ -2,12 +2,14 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthenticatedLayout from './AuthenticatedLayout';
 import MfaEnforcementLayout from './MfaEnforcementLayout';
+import { useOrganizations } from '@/hooks/useOrganizations';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedLayout() {
-  const { isAuthenticated, isLoading, requiresMfaEnrollment } = useAuth();
+  const { isAuthenticated, isLoading, requiresMfaEnrollment, isOrgMember } = useAuth();
+  const { isLoading: isOrgsLoading } = useOrganizations();
 
-  if (isLoading) {
+  if (isLoading || isOrgsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -22,13 +24,16 @@ export default function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
+  // User is logged in but hasn't joined/created an org yet — send to org-setup
+  if (!isOrgMember) {
+    return <Navigate to="/org-setup" replace />;
+  }
+
   if (requiresMfaEnrollment) {
     return <MfaEnforcementLayout />;
   }
 
   return (
-    <AuthenticatedLayout>
-      <Outlet />
-    </AuthenticatedLayout>
+    <AuthenticatedLayout />
   );
 }

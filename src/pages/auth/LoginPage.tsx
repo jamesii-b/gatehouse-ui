@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2, Smartphone, AlertTriangle } from "lucide-react";
+import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2, Smartphone, AlertTriangle, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,7 +49,7 @@ async function completeOidcFlow(oidcSessionId: string, token: string): Promise<s
 }
 
 export default function LoginPage() {
-  const { login, verifyTotp, refreshUser } = useAuth();
+  const { login, verifyTotp, refreshUser, user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -68,6 +68,46 @@ export default function LoginPage() {
   // After successful login, call /oidc/complete and redirect to the client app.
   const oidcSessionId = searchParams.get('oidc_session_id');
   const oidcError = searchParams.get('error');
+
+  // CLI bridge: if cli_token or cli_redirect is present the login was triggered
+  // by the Gatehouse CLI tool.  After successful auth the token is delivered
+  // directly to the CLI's local callback server.
+  const cliToken = searchParams.get('cli_token');
+  const cliRedirectParam = searchParams.get('cli_redirect');
+  const [cliRedirectUrl, setCliRedirectUrl] = useState<string | null>(cliRedirectParam);
+  const cliFetchedRef = useRef(false);
+
+  // Exchange cli_token for the real redirect URL (keeps the URL clean)
+  useEffect(() => {
+    if (!cliToken || cliFetchedRef.current) return;
+    cliFetchedRef.current = true;
+    fetch(`${GATEHOUSE_API}/cli/redirect-url?token=${encodeURIComponent(cliToken)}`)
+      .then((r) => r.json())
+      .then((body) => {
+        if (body?.data?.redirect_url) {
+          setCliRedirectUrl(body.data.redirect_url);
+        }
+      })
+      .catch(() => {/* ignore — user will just land on normal login */});
+  }, [cliToken]);
+
+  const finishCliFlow = useCallback((token: string) => {
+    if (!cliRedirectUrl) return false;
+    // cliRedirectUrl already ends with "token=" — just append the value
+    window.location.href = cliRedirectUrl + encodeURIComponent(token);
+    return true;
+  }, [cliRedirectUrl]);
+
+  // If the user is already authenticated and we're in CLI mode, deliver the
+  // token immediately — no need to show the login form at all.
+  useEffect(() => {
+    if (authLoading) return; // wait until auth state is known
+    if (!cliRedirectUrl) return;
+    const existingToken = tokenManager.getToken();
+    if (user && existingToken) {
+      finishCliFlow(existingToken);
+    }
+  }, [authLoading, user, cliRedirectUrl, finishCliFlow]);
 
   const finishOidcFlow = useCallback(async (token: string) => {
     if (!oidcSessionId) return false;
@@ -110,8 +150,12 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
 
+    // In CLI or OIDC mode we need to handle post-auth navigation ourselves,
+    // so tell AuthContext not to navigate to /profile automatically.
+    const needsCustomNav = !!(cliRedirectUrl || oidcSessionId);
+
     try {
-      const result = await login(email, password, rememberMe);
+      const result = await login(email, password, rememberMe, needsCustomNav);
       if (result.requiresWebAuthn) {
         setStep('webauthn');
       } else if (result.requiresTotp) {
@@ -119,13 +163,17 @@ export default function LoginPage() {
         setTotpCode("");
       } else if (result.requiresMfaEnrollment) {
         // MFA enrollment required - will be handled by ProtectedLayout
-        // Navigation happens in AuthContext
+        // Navigation happens in AuthContext (MFA path always navigates)
       } else if (oidcSessionId) {
         // OIDC bridge: send token back to the Gatehouse backend to complete the flow
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
+      } else if (cliRedirectUrl) {
+        // CLI bridge: deliver the token directly to the CLI's local server
+        const token = tokenManager.getToken();
+        if (token) finishCliFlow(token);
       }
-      // If no TOTP, WebAuthn, or MFA enrollment required, navigation happens in AuthContext
+      // Normal login: navigation already handled by AuthContext (skipNavigate=false)
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] Login failed:", error);
@@ -178,16 +226,22 @@ export default function LoginPage() {
         // OIDC bridge: finish the flow if this is an OIDC login
         if (oidcSessionId && response.token) {
           await finishOidcFlow(response.token);
+        } else if (cliRedirectUrl && response.token) {
+          finishCliFlow(response.token);
         } else {
           await refreshUser();
           navigate('/profile');
         }
       } else {
         // Fallback to regular TOTP verification
-        await verifyTotp(totpCode, useBackupCode);
+        const needsCustomNav = !!(cliRedirectUrl || oidcSessionId);
+        await verifyTotp(totpCode, useBackupCode, needsCustomNav);
         if (oidcSessionId) {
           const token = tokenManager.getToken();
           if (token) await finishOidcFlow(token);
+        } else if (cliRedirectUrl) {
+          const token = tokenManager.getToken();
+          if (token) finishCliFlow(token);
         }
       }
     } catch (error) {
@@ -227,13 +281,17 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      await verifyTotp(totpCode, useBackupCode);
+      const needsCustomNav = !!(cliRedirectUrl || oidcSessionId);
+      await verifyTotp(totpCode, useBackupCode, needsCustomNav);
       // OIDC bridge: finish the flow if this is an OIDC login
       if (oidcSessionId) {
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
+      } else if (cliRedirectUrl) {
+        const token = tokenManager.getToken();
+        if (token) finishCliFlow(token);
       }
-      // Otherwise navigation happens in AuthContext
+      // Normal login: navigation already handled by AuthContext (skipNavigate=false)
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] TOTP verification failed:", error);
@@ -292,6 +350,9 @@ export default function LoginPage() {
       if (oidcSessionId) {
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
+      } else if (cliRedirectUrl) {
+        const token = tokenManager.getToken();
+        if (token) finishCliFlow(token);
       } else {
         navigate('/profile');
       }
@@ -364,6 +425,9 @@ export default function LoginPage() {
       if (oidcSessionId) {
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
+      } else if (cliRedirectUrl) {
+        const token = tokenManager.getToken();
+        if (token) finishCliFlow(token);
       } else {
         await refreshUser();
         navigate('/profile');
@@ -443,6 +507,11 @@ export default function LoginPage() {
         flow: 'login',
         ...(oidcSessionId ? { oidc_session_id: oidcSessionId } : {}),
       });
+
+      // CLI bridge: stash the redirect URL so OAuthCallbackPage can deliver the token
+      if (cliRedirectUrl) {
+        sessionStorage.setItem('cli_redirect_url', cliRedirectUrl);
+      }
 
       // Redirect browser to provider
       window.location.href = response.authorization_url;
@@ -860,11 +929,18 @@ export default function LoginPage() {
   return (
     <div className="auth-card">
       <div className="text-center mb-8">
+        {cliRedirectUrl && (
+          <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <Terminal className="w-6 h-6 text-primary" />
+          </div>
+        )}
         <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          {oidcSessionId ? "Sign in to continue" : "Welcome back"}
+          {cliRedirectUrl ? "Authorize CLI access" : oidcSessionId ? "Sign in to continue" : "Welcome back"}
         </h1>
         <p className="text-muted-foreground mt-2">
-          {oidcSessionId
+          {cliRedirectUrl
+            ? "Sign in to grant the Gatehouse CLI access to your account"
+            : oidcSessionId
             ? "An application is requesting access to your account"
             : "Sign in to your account to continue"}
         </p>

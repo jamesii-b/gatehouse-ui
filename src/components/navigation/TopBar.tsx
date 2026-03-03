@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Menu, ChevronDown, LogOut, User, Shield, Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,34 +12,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
-import { Organization } from "@/lib/api";
+import { useOrg } from "@/contexts/OrgContext";
 import { useOrganizations } from "@/hooks/useOrganizations";
 import { ComplianceBanner } from "@/components/auth/ComplianceBanner";
 
 export function TopBar() {
   const navigate = useNavigate();
-  const { user, isAuthenticated, mfaCompliance } = useAuth();
-  const [currentOrg, setCurrentOrg] = useState<Organization | null>(null);
-  
+  const { user, mfaCompliance, logout } = useAuth();
+  const { selectedOrg, selectOrg } = useOrg();
+
   // Use React Query hook for organizations with automatic caching and deduplication
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
-
-  // Debug logging
-  console.log('[TopBar] organizations data:', organizations);
-  console.log('[TopBar] organizations is array:', Array.isArray(organizations));
 
   // Ensure organizations is always an array (defensive check)
   const organizationsArray = Array.isArray(organizations) ? organizations : [];
 
-  // Set initial currentOrg when organizations are loaded
-  useEffect(() => {
-    if (organizationsArray.length > 0 && !currentOrg) {
-      setCurrentOrg(organizationsArray[0]);
-    }
-  }, [organizationsArray, currentOrg]);
-
-  const handleLogout = () => {
-    navigate("/login");
+  const handleLogout = async () => {
+    await logout();
   };
 
   const userInitials = user?.full_name
@@ -68,7 +56,7 @@ export function TopBar() {
                   <Building2 className="w-3.5 h-3.5 text-primary" />
                 </div>
                 <span className="text-sm font-medium hidden sm:inline">
-                  {orgsLoading ? "Loading..." : (currentOrg?.name || "No Organization")}
+                  {orgsLoading ? "Loading..." : (selectedOrg?.name || "No Organization")}
                 </span>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </Button>
@@ -90,7 +78,7 @@ export function TopBar() {
                 organizationsArray.map((org) => (
                   <DropdownMenuItem
                     key={org.id}
-                    onClick={() => setCurrentOrg(org)}
+                    onClick={() => selectOrg(org)}
                     className="flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2">

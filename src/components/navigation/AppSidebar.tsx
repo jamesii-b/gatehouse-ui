@@ -8,10 +8,15 @@ import {
   Users,
   Settings,
   FileText,
-  Key,
+  Layers,
+  GitBranch,
+  ScrollText,
+  Terminal,
+  ShieldCheck,
 } from "lucide-react";
 import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
 import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar,
   SidebarContent,
@@ -30,29 +35,41 @@ import { cn } from "@/lib/utils";
 const userNavItems = [
   { title: "Profile", url: "/profile", icon: User },
   { title: "Security", url: "/security", icon: Shield },
+  { title: "SSH Keys", url: "/ssh-keys", icon: Terminal },
   { title: "Linked Accounts", url: "/linked-accounts", icon: Link2 },
   { title: "Activity", url: "/activity", icon: Activity },
 ];
 
-const orgNavItems = [
+// Visible to ALL org members
+const orgMemberNavItems = [
+  { title: "Overview", url: "/org", icon: Building2 },
+  { title: "My Memberships", url: "/org/my-memberships", icon: Layers },
+];
+
+// Visible to org admins/owners only (management)
+const orgAdminNavItems = [
   { title: "Overview", url: "/org", icon: Building2 },
   { title: "Members", url: "/org/members", icon: Users },
+  { title: "Departments", url: "/org/departments", icon: Layers },
+  { title: "Principals", url: "/org/principals", icon: GitBranch },
   { title: "Policies", url: "/org/policies", icon: Settings },
-  { title: "Audit Log", url: "/org/audit", icon: FileText },
 ];
 
 const adminNavItems = [
-  { title: "OIDC Clients", url: "/org/clients", icon: Key },
+  { title: "Certificate Auth.", url: "/org/cas", icon: ShieldCheck },
+  { title: "Org Audit Log", url: "/org/audit", icon: FileText },
+  { title: "System Logs",  url: "/admin/audit", icon: ScrollText },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const { isOrgAdmin, isOrgMember } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
-  const isOrgActive = orgNavItems.some((item) => isActive(item.url)) || adminNavItems.some((item) => isActive(item.url));
-  const isUserActive = userNavItems.some((item) => isActive(item.url));
+  const isOrgActive = orgAdminNavItems.some((item) => isActive(item.url)) || adminNavItems.some((item) => isActive(item.url));
+  void isOrgActive; // used for future active state tracking
 
   return (
     <Sidebar
@@ -77,9 +94,11 @@ export function AppSidebar() {
       <SidebarContent className="py-4">
         {/* User Section */}
         <SidebarGroup>
-          <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
-            {!collapsed && "Account"}
-          </SidebarGroupLabel>
+          {!collapsed && (
+            <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
+              Account
+            </SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
             <SidebarMenu>
               {userNavItems.map((item) => (
@@ -89,8 +108,11 @@ export function AppSidebar() {
                       to={item.url}
                       end
                       className={cn(
-                        "flex items-center gap-3 px-4 py-2.5 text-sm text-sidebar-foreground rounded-lg mx-2 transition-colors",
-                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        "flex items-center text-sm text-sidebar-foreground rounded-lg transition-colors",
+                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        collapsed
+                          ? "justify-center w-10 h-10 mx-auto p-0"
+                          : "gap-3 px-4 py-2.5 mx-2"
                       )}
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                     >
@@ -104,22 +126,28 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Organization Section */}
+        {/* Organization Section — content differs by role */}
+        {isOrgMember && (
         <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
-            {!collapsed && "Organization"}
-          </SidebarGroupLabel>
+          {!collapsed && (
+            <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
+              Organization
+            </SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {orgNavItems.map((item) => (
+              {(isOrgAdmin ? orgAdminNavItems : orgMemberNavItems).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
                       end
                       className={cn(
-                        "flex items-center gap-3 px-4 py-2.5 text-sm text-sidebar-foreground rounded-lg mx-2 transition-colors",
-                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        "flex items-center text-sm text-sidebar-foreground rounded-lg transition-colors",
+                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        collapsed
+                          ? "justify-center w-10 h-10 mx-auto p-0"
+                          : "gap-3 px-4 py-2.5 mx-2"
                       )}
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                     >
@@ -132,12 +160,16 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
 
-        {/* Admin Section */}
+        {/* Admin Section — only visible to org admins/owners */}
+        {isOrgAdmin && (
         <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
-            {!collapsed && "Admin"}
-          </SidebarGroupLabel>
+          {!collapsed && (
+            <SidebarGroupLabel className="px-4 text-xs font-medium text-sidebar-muted uppercase tracking-wider">
+              Admin
+            </SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
             <SidebarMenu>
               {adminNavItems.map((item) => (
@@ -147,8 +179,11 @@ export function AppSidebar() {
                       to={item.url}
                       end
                       className={cn(
-                        "flex items-center gap-3 px-4 py-2.5 text-sm text-sidebar-foreground rounded-lg mx-2 transition-colors",
-                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        "flex items-center text-sm text-sidebar-foreground rounded-lg transition-colors",
+                        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        collapsed
+                          ? "justify-center w-10 h-10 mx-auto p-0"
+                          : "gap-3 px-4 py-2.5 mx-2"
                       )}
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                     >
@@ -161,6 +196,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4 border-t border-sidebar-border">

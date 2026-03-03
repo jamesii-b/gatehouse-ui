@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { api, OrgPolicyResponse, UpdateOrgPolicyDto, create403Handler } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useOrg } from "@/contexts/OrgContext";
 
 const MFA_MODE_LABELS: Record<string, { label: string; description: string }> = {
   disabled: {
@@ -40,8 +41,8 @@ export default function PoliciesPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [currentOrgId, setCurrentOrgId] = useState<string | null>(null);
-  
+  const { selectedOrgId: currentOrgId } = useOrg();
+
   // Local form state for unsaved changes
   const [formData, setFormData] = useState({
     mfa_policy_mode: '',
@@ -49,20 +50,6 @@ export default function PoliciesPage() {
     notify_days_before: 7,
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  // Fetch organizations to get current org
-  const { data: orgsData, isLoading: orgsLoading } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: () => api.users.organizations({
-      on403: create403Handler(toast),
-    }),
-  });
-
-  useEffect(() => {
-    if (orgsData?.organizations && orgsData.organizations.length > 0) {
-      setCurrentOrgId(orgsData.organizations[0].id);
-    }
-  }, [orgsData]);
 
   // Fetch org policy
   const { data: policy, isLoading: policyLoading } = useQuery({
@@ -184,7 +171,7 @@ export default function PoliciesPage() {
     }
   };
 
-  if (orgsLoading || policyLoading) {
+  if (policyLoading) {
     return (
       <div className="page-container">
         <div className="flex items-center justify-center py-12">
