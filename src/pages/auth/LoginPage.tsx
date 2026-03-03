@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Mail, Lock, ArrowRight, Fingerprint, ArrowLeft, ShieldCheck, Loader2, Smartphone, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,9 +23,30 @@ import {
 } from "@/lib/webauthn";
 import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
-import { generateCodeVerifier, computeCodeChallenge, generateState, storeOAuthState, OAuthProvider } from "@/lib/oauth";
+import { OAuthProvider } from "@/lib/oauth";
 
 type LoginStep = 'credentials' | 'totp' | 'webauthn' | 'passkey-email' | 'mfa-enrollment' | 'mfa';
+
+const GATEHOUSE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1';
+const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
+
+/**
+ * Complete an OIDC authorization flow after the user has authenticated.
+ * Sends the bearer token + oidc_session_id to the backend, which generates
+ * the auth code and returns the redirect URL for the calling application.
+ */
+async function completeOidcFlow(oidcSessionId: string, token: string): Promise<string> {
+  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oidc_session_id: oidcSessionId, token }),
+  });
+  const body = await res.json();
+  if (!res.ok || !body.success) {
+    throw new Error(body.message ?? 'OIDC completion failed');
+  }
+  return body.data.redirect_url as string;
+}
 
 export default function LoginPage() {
   const { login, verifyTotp, refreshUser } = useAuth();
@@ -41,6 +62,28 @@ export default function LoginPage() {
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [passkeyEmail, setPasskeyEmail] = useState("");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
+
+  // OIDC bridge: if oidc_session_id is in the URL, we're acting as the
+  // login UI for an OIDC authorization flow (e.g. SecuIRD → Gatehouse).
+  // After successful login, call /oidc/complete and redirect to the client app.
+  const oidcSessionId = searchParams.get('oidc_session_id');
+  const oidcError = searchParams.get('error');
+
+  const finishOidcFlow = useCallback(async (token: string) => {
+    if (!oidcSessionId) return false;
+    try {
+      const redirectUrl = await completeOidcFlow(oidcSessionId, token);
+      window.location.href = redirectUrl;
+      return true;
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Authorization failed",
+        description: err instanceof Error ? err.message : "Could not complete OIDC authorization",
+      });
+      return false;
+    }
+  }, [oidcSessionId, toast]);
 
   // Check for MFA step from OAuth callback
   useEffect(() => {
@@ -77,6 +120,10 @@ export default function LoginPage() {
       } else if (result.requiresMfaEnrollment) {
         // MFA enrollment required - will be handled by ProtectedLayout
         // Navigation happens in AuthContext
+      } else if (oidcSessionId) {
+        // OIDC bridge: send token back to the Gatehouse backend to complete the flow
+        const token = tokenManager.getToken();
+        if (token) await finishOidcFlow(token);
       }
       // If no TOTP, WebAuthn, or MFA enrollment required, navigation happens in AuthContext
     } catch (error) {
@@ -128,12 +175,20 @@ export default function LoginPage() {
         sessionStorage.removeItem('mfa_token');
         sessionStorage.removeItem('mfa_flow');
         
-        // Refresh user context and navigate
-        await refreshUser();
-        navigate('/profile');
+        // OIDC bridge: finish the flow if this is an OIDC login
+        if (oidcSessionId && response.token) {
+          await finishOidcFlow(response.token);
+        } else {
+          await refreshUser();
+          navigate('/profile');
+        }
       } else {
         // Fallback to regular TOTP verification
         await verifyTotp(totpCode, useBackupCode);
+        if (oidcSessionId) {
+          const token = tokenManager.getToken();
+          if (token) await finishOidcFlow(token);
+        }
       }
     } catch (error) {
       if (import.meta.env.DEV) {
@@ -173,7 +228,12 @@ export default function LoginPage() {
 
     try {
       await verifyTotp(totpCode, useBackupCode);
-      // Navigation happens in AuthContext
+      // OIDC bridge: finish the flow if this is an OIDC login
+      if (oidcSessionId) {
+        const token = tokenManager.getToken();
+        if (token) await finishOidcFlow(token);
+      }
+      // Otherwise navigation happens in AuthContext
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] TOTP verification failed:", error);
@@ -229,7 +289,12 @@ export default function LoginPage() {
 
       // Token is stored by completeLogin, refresh user and navigate
       await refreshUser();
-      navigate('/profile');
+      if (oidcSessionId) {
+        const token = tokenManager.getToken();
+        if (token) await finishOidcFlow(token);
+      } else {
+        navigate('/profile');
+      }
       
       toast({
         title: "Welcome back",
@@ -295,14 +360,18 @@ export default function LoginPage() {
       const formattedAssertion = formatLoginAssertion(assertion);
       const result = await api.webauthn.completeLogin(formattedAssertion);
 
-      // Token is stored by completeLogin, refresh user and navigate
-      await refreshUser();
-      navigate('/profile');
-      
-      toast({
-        title: "Welcome back",
-        description: `Signed in as ${result.user.email}`,
-      });
+      // OIDC bridge or normal navigation
+      if (oidcSessionId) {
+        const token = tokenManager.getToken();
+        if (token) await finishOidcFlow(token);
+      } else {
+        await refreshUser();
+        navigate('/profile');
+        toast({
+          title: "Welcome back",
+          description: `Signed in as ${result.user.email}`,
+        });
+      }
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] WebAuthn verification failed:", error);
@@ -351,35 +420,33 @@ export default function LoginPage() {
   };
 
   /**
-   * Initiate OAuth login flow for external provider
+   * Initiate OAuth login flow for external provider.
+   *
+   * The backend /authorize endpoint builds the Google auth URL (with the
+   * backend callback as redirect_uri) and returns it.  We then redirect the
+   * browser to Google.  After the user authenticates, Google calls the backend
+   * callback, the backend exchanges the code for a session token, and
+   * redirects the browser to /oauth/callback?token=... on the frontend.
    */
   const handleOAuthLogin = async (provider: OAuthProvider) => {
     setIsLoading(true);
-    
-    try {
-      // Generate PKCE parameters
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = await computeCodeChallenge(codeVerifier);
-      const state = generateState();
 
-      // Store OAuth state for callback validation
-      storeOAuthState({
-        state,
-        codeVerifier,
+    try {
+      // The redirect_uri Google will call is the *backend* callback.
+      // The backend then redirects to the frontend /oauth/callback with the token.
+      const backendCallbackUri = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1'}/auth/external/${provider}/callback`;
+
+      // Ask backend for the Google authorization URL
+      // If we're in an OIDC bridge flow, pass oidc_session_id so it survives the round-trip
+      const response = await api.externalAuth.initiateLogin(provider, {
+        redirect_uri: backendCallbackUri,
         flow: 'login',
-        provider,
-        redirectUri: `${window.location.origin}/oauth/callback`,
+        ...(oidcSessionId ? { oidc_session_id: oidcSessionId } : {}),
       });
 
-      // Get authorization URL from backend
-      const response = await api.externalAuth.initiateLogin(provider, state);
+      // Redirect browser to provider
+      window.location.href = response.authorization_url;
 
-      // Redirect to provider authorization page
-      const authUrl = new URL(response.authorization_url);
-      authUrl.searchParams.set('state', response.state || state);
-
-      window.location.href = authUrl.toString();
-      
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("[Gatehouse] OAuth login failed:", error);
@@ -794,11 +861,16 @@ export default function LoginPage() {
     <div className="auth-card">
       <div className="text-center mb-8">
         <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          Welcome back
+          {oidcSessionId ? "Sign in to continue" : "Welcome back"}
         </h1>
         <p className="text-muted-foreground mt-2">
-          Sign in to your account to continue
+          {oidcSessionId
+            ? "An application is requesting access to your account"
+            : "Sign in to your account to continue"}
         </p>
+        {oidcError && (
+          <p className="text-sm text-destructive mt-2">{oidcError}</p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">

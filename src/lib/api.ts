@@ -132,6 +132,8 @@ export interface WebAuthnLoginCompleteResponse {
 }
 
 // External Auth Types
+export type ExternalProviderId = 'google' | 'github' | 'microsoft';
+
 export interface ExternalProvider {
   id: string;
   name: string;
@@ -606,12 +608,17 @@ export const api = {
     listLinkedAccounts: () =>
       request<LinkedAccountsResponse>('/auth/external/linked-accounts'),
 
-    // Initiate OAuth login flow
-    initiateLogin: (provider: string, options?: { redirect_uri?: string; organization_id?: string }) =>
-      request<OAuthAuthorizeResponse>(`/auth/external/${provider}/authorize`, {
+    // Initiate OAuth login flow — returns authorization_url to redirect the browser to
+    initiateLogin: (provider: string, options?: { redirect_uri?: string; organization_id?: string; flow?: string; oidc_session_id?: string }) => {
+      const params = new URLSearchParams({ flow: options?.flow ?? 'login' });
+      if (options?.redirect_uri) params.set('redirect_uri', options.redirect_uri);
+      if (options?.organization_id) params.set('organization_id', options.organization_id);
+      if (options?.oidc_session_id) params.set('oidc_session_id', options.oidc_session_id);
+      return request<OAuthAuthorizeResponse>(`/auth/external/${provider}/authorize?${params.toString()}`, {
         method: 'GET',
         credentials: 'include',
-      }, false),
+      }, false);
+    },
 
     // Initiate account linking flow (requires auth)
     initiateLink: (provider: string, redirect_uri?: string) =>

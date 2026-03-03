@@ -4,16 +4,37 @@ import { Loader2, AlertCircle, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, ApiError, tokenManager, OAuthCallbackResponse } from "@/lib/api";
-import { getOAuthState, clearOAuthState } from "@/lib/oauth";
+import { tokenManager } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 type CallbackState = 'loading' | 'success' | 'error';
 
+const GATEHOUSE_API = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1') as string;
+const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
+
+async function completeOidcFlow(oidcSessionId: string, token: string): Promise<string> {
+  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oidc_session_id: oidcSessionId, token }),
+  });
+  const body = await res.json();
+  if (!res.ok || !body.success) throw new Error(body.message ?? 'OIDC completion failed');
+  return body.data.redirect_url as string;
+}
+
 /**
- * OAuth callback page that handles the redirect from external OAuth providers.
- * Extracts the authorization code and state from the URL, validates the state,
- * exchanges the code for tokens, and handles MFA requirements.
+ * OAuth callback page that handles the redirect from the Gatehouse backend
+ * after a successful (or failed) OAuth provider authentication.
+ *
+ * The backend exchanges the provider code for a session token and then
+ * redirects the browser here with query params:
+ *
+ *   Success:       ?token=TOKEN&expires_in=86400&flow=login&provider=google&state=STATE
+ *   OIDC bridge:   same as above + &oidc_session_id=ID
+ *   Error:         ?error=MESSAGE&error_type=TYPE&state=STATE
+ *   Org selection: ?requires_org_selection=1&state=STATE
+ *   Org creation:  ?requires_org_creation=1&state=STATE
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -26,138 +47,101 @@ export default function OAuthCallbackPage() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      // 1. Extract query parameters from URL
-      const code = searchParams.get("code");
-      const callbackState = searchParams.get("state");
       const errorParam = searchParams.get("error");
-      const errorDescription = searchParams.get("error_description");
+      const errorType = searchParams.get("error_type");
+      const token = searchParams.get("token");
+      const expiresIn = searchParams.get("expires_in");
+      const flowType = searchParams.get("flow") || "login";
+      const provider = searchParams.get("provider") || "google";
+      const requiresOrgSelection = searchParams.get("requires_org_selection");
+      const requiresOrgCreation = searchParams.get("requires_org_creation");
+      const oidcSessionId = searchParams.get("oidc_session_id");
 
-      // 2. Handle OAuth errors from provider
+      // Error from provider or backend
       if (errorParam) {
         setStatus('error');
-        
-        // User denied access
-        if (errorParam === 'access_denied') {
+        if (errorType === 'ACCESS_DENIED' || errorParam.toLowerCase().includes('denied')) {
           setError("You denied the authorization request. Please try again if you wish to sign in.");
         } else {
-          setError(errorDescription || `Authorization failed: ${errorParam}`);
+          setError(errorParam);
         }
         return;
       }
 
-      // Validate required parameters
-      if (!code || !callbackState) {
+      // Organisation selection required
+      if (requiresOrgSelection) {
         setStatus('error');
-        setError("Missing authorization code or state parameter. Please try signing in again.");
+        setError("Multiple organizations found. Organization selection is not yet supported in this UI. Please contact your administrator.");
         return;
       }
 
-      // 3. Validate state parameter (CSRF protection)
-      const storedState = getOAuthState(callbackState);
-      if (!storedState) {
+      // Organisation creation required
+      if (requiresOrgCreation) {
         setStatus('error');
-        setError("Invalid or expired OAuth state. Please try signing in again.");
+        setError("No organization found for your account. Please ask an administrator to add you to an organization.");
+        return;
+      }
+
+      // Success — token in URL
+      if (!token) {
+        setStatus('error');
+        setError("No authentication token received. Please try signing in again.");
         return;
       }
 
       try {
-        // 4. Exchange authorization code for tokens using the API
-        const response = await api.externalAuth.handleCallback(
-          storedState.provider,
-          code,
-          callbackState
-        );
+        const expiresAt = expiresIn
+          ? new Date(Date.now() + parseInt(expiresIn, 10) * 1000).toISOString()
+          : null;
 
-        // Handle error response from backend
-        if (response.error) {
-          setStatus('error');
-          
-          // Map error types to user-friendly messages
-          switch (response.error_type) {
-            case 'ACCESS_DENIED':
-              setError("You denied the authorization request. Please try again if you wish to sign in.");
-              break;
-            case 'INVALID_REQUEST':
-              setError("Invalid request. Please try signing in again.");
-              break;
-            case 'SERVER_ERROR':
-              setError("The authentication server encountered an error. Please try again later.");
-              break;
-            default:
-              setError(response.error || "An error occurred during authentication.");
-          }
-          
-          clearOAuthState(callbackState);
-          return;
-        }
-
-        // 5. Handle MFA requirement
-        if (response.requires_mfa && response.mfa_token) {
-          // Store MFA token for the MFA verification flow
-          sessionStorage.setItem('mfa_token', response.mfa_token);
-          sessionStorage.setItem('mfa_flow', 'external_auth');
-          clearOAuthState(callbackState);
-          
-          // Redirect to login page with MFA step
-          navigate('/login?step=mfa', { replace: true });
-          return;
-        }
-
-        // 6. Store authentication tokens
-        if (response.token && response.expires_in) {
-          tokenManager.setToken(response.token, new Date(Date.now() + response.expires_in * 1000).toISOString());
-        }
-
-        // Clear OAuth state (single-use)
-        clearOAuthState(callbackState);
-
-        // Refresh user context
+        tokenManager.setToken(token, expiresAt);
         await refreshUser();
+
+        // ── OIDC bridge: complete the flow and redirect back to the OIDC client ──
+        if (oidcSessionId) {
+          try {
+            const redirectUrl = await completeOidcFlow(oidcSessionId, token);
+            window.location.href = redirectUrl;
+            return;
+          } catch (oidcErr) {
+            if (import.meta.env.DEV) {
+              console.error("[Gatehouse] OIDC completion failed after OAuth:", oidcErr);
+            }
+            // Fall through to normal flow on failure — user is still logged in
+          }
+        }
 
         setStatus('success');
 
-        // Show success toast and redirect
         toast({
           title: "Sign in successful",
-          description: response.user ? `Welcome, ${response.user.email}` : "You have been signed in successfully.",
+          description: `Signed in with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`,
         });
 
-        // 7. Redirect based on flow type
         setTimeout(() => {
-          switch (storedState.flowType) {
+          switch (flowType) {
             case 'link':
               navigate('/linked-accounts', { replace: true });
               break;
             case 'register':
-              navigate('/profile', { replace: true });
-              break;
             case 'login':
             default:
               navigate('/profile', { replace: true });
           }
-        }, 1500);
+        }, 1200);
 
       } catch (err) {
         setStatus('error');
-        clearOAuthState(callbackState);
-        
-        if (err instanceof ApiError) {
-          // Handle specific error types
-          if (err.type === 'STATE_MISMATCH') {
-            setError("CSRF protection check failed. Please try signing in again.");
-          } else if (err.code === 401) {
-            setError("Authentication failed. The authorization code may have expired.");
-          } else {
-            setError(err.message || "An unexpected error occurred during authentication.");
-          }
-        } else {
-          setError("An unexpected error occurred. Please try signing in again.");
+        setError("Failed to load your profile. Please try signing in again.");
+        if (import.meta.env.DEV) {
+          console.error("[Gatehouse] OAuth callback refreshUser failed:", err);
         }
       }
     };
 
     handleCallback();
-  }, [searchParams, navigate, refreshUser, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (status === 'loading') {
     return (
@@ -182,9 +166,7 @@ export default function OAuthCallbackPage() {
               <AlertCircle className="w-5 h-5" />
               Authentication Failed
             </CardTitle>
-            <CardDescription>
-              {error}
-            </CardDescription>
+            <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => navigate('/login', { replace: true })} className="w-full">
@@ -196,7 +178,6 @@ export default function OAuthCallbackPage() {
     );
   }
 
-  // Success state (briefly shown before redirect)
   return (
     <div className="auth-card">
       <div className="text-center">
@@ -209,3 +190,4 @@ export default function OAuthCallbackPage() {
     </div>
   );
 }
+
