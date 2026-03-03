@@ -1098,6 +1098,25 @@ export const api = {
         body: JSON.stringify({ key_id, principals, cert_type, expiry_hours }),
       }, true, requestConfig),
 
+    // Issue a host certificate by submitting a raw server host public key
+    // (admin-only; does not require a pre-registered SSHKey record)
+    signHostCert: (
+      hostPublicKey: string,
+      principals: string[],
+      validityHours: number,
+      caId: string,
+      requestConfig?: RequestConfig,
+    ) =>
+      request<SSHSignResponse>('/ssh/sign/host', {
+        method: 'POST',
+        body: JSON.stringify({
+          host_public_key: hostPublicKey,
+          principals,
+          validity_hours: validityHours,
+          ca_id: caId,
+        }),
+      }, true, requestConfig),
+
     // Get the merged department certificate policy for the current user (used in sign dialog)
     getMyDeptCertPolicy: (requestConfig?: RequestConfig) =>
       request<{ policy: DeptCertPolicy }>('/ssh/dept-cert-policy', {}, true, requestConfig),
