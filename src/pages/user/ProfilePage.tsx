@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mail, Upload, CheckCircle, AlertCircle, Loader2, Bell, AlertTriangle, Trash2, Building2 } from "lucide-react";
+import { Mail, Upload, CheckCircle, AlertCircle, Loader2, Bell, AlertTriangle, Trash2, Building2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +76,7 @@ export default function ProfilePage() {
   // Delete account dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState("");
 
   // Sync local name state with user data
   useEffect(() => {
@@ -108,14 +109,23 @@ export default function ProfilePage() {
       await api.users.deleteMe();
       toast({ title: "Account deleted", description: "Your account has been deleted." });
       setDeleteDialogOpen(false);
+      setConfirmEmail("");
       await logout();
       navigate("/login");
     } catch (err) {
       if (err instanceof ApiError && err.type === "USER_IS_SOLE_OWNER") {
-        const orgs: string[] = (err.details?.organizations as string[]) ?? [];
+        const details = err.details as {
+          transfer_ownership?: string[];
+        } | undefined;
+
+        const transferOrgs = details?.transfer_ownership ?? [];
+
         toast({
           title: "Cannot delete account",
-          description: `You are the sole owner of: ${orgs.join(", ")}. Transfer ownership or delete those organizations first.`,
+          description:
+            transferOrgs.length > 0
+              ? `You are the owner of ${transferOrgs.join(", ")} and other members exist. Transfer ownership to another member before deleting your account.`
+              : "You own organizations with other members. Transfer ownership first.",
           variant: "destructive",
         });
       } else {
@@ -325,7 +335,8 @@ export default function ProfilePage() {
                 <p className="text-sm font-medium text-destructive">Delete Account</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Permanently deletes your profile and all associated data. If you own
-                  any organizations you must transfer ownership or delete them first.
+                  organizations with other members, transfer ownership first. Sole-member
+                  organizations are deleted automatically.
                 </p>
               </div>
               <Button
@@ -342,7 +353,13 @@ export default function ProfilePage() {
       </div>
 
       {/* Delete account confirmation dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setConfirmEmail("");
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
@@ -354,24 +371,76 @@ export default function ProfilePage() {
               permanently deleted. This action <strong>cannot be undone</strong>.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300 space-y-1">
+
+          {/* Org ownership warning */}
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300 space-y-2">
             <p className="flex items-center gap-2 font-medium">
               <Building2 className="w-4 h-4" />
               Organization ownership check
             </p>
             <p>
-              If you are the sole owner of any organization that has other members,
-              you must <strong>transfer ownership</strong> to another member or delete
-              those organizations before proceeding.
+              If you own organizations with other members, you must{" "}
+              <strong>transfer ownership</strong> to another member first.
+            </p>
+            <p>
+              Organizations where you are the <strong>sole member</strong> will
+              be automatically deleted along with your account.
             </p>
           </div>
+
+          {/* What will be deleted */}
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-1">
+            <p className="font-medium flex items-center gap-2">
+              <TriangleAlert className="w-4 h-4" />
+              The following will be permanently deleted:
+            </p>
+            <ul className="list-disc list-inside space-y-0.5 text-destructive/80 pl-1">
+              <li>Your profile and account data</li>
+              <li>All SSH keys and active certificates</li>
+              <li>All linked accounts (Google, GitHub, etc.)</li>
+              <li>All active sessions</li>
+              <li>All passkeys and MFA methods</li>
+            </ul>
+          </div>
+
+          {/* Email confirmation input */}
+          <div className="space-y-2">
+            <Label htmlFor="confirm-email" className="text-sm">
+              Type your email address{" "}
+              <span className="font-mono font-semibold text-foreground">
+                {user.email}
+              </span>{" "}
+              to confirm:
+            </Label>
+            <Input
+              id="confirm-email"
+              type="email"
+              placeholder={user.email}
+              value={confirmEmail}
+              onChange={(e) => setConfirmEmail(e.target.value)}
+              disabled={isDeleting}
+              autoComplete="off"
+            />
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setConfirmEmail("");
+              }}
+              disabled={isDeleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDeleteAccount} disabled={isDeleting}>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={isDeleting || confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()}
+            >
               {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Yes, delete my account
+              Yes, permanently delete my account
             </Button>
           </DialogFooter>
         </DialogContent>

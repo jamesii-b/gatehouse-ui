@@ -814,9 +814,12 @@ export const api = {
     getById: (orgId: string, requestConfig?: RequestConfig) =>
       request<{ organization: Organization; member_count: number }>(`/organizations/${orgId}`, {}, true, requestConfig),
 
-    // Delete an organization (owner only; must have no other members)
-    deleteOrganization: (orgId: string, requestConfig?: RequestConfig) =>
-      request<{ message: string }>(`/organizations/${orgId}`, { method: 'DELETE' }, true, requestConfig),
+    // Delete an organization (owner only; pass confirm=true when other members exist)
+    deleteOrganization: (orgId: string, confirm?: boolean, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}`, {
+        method: 'DELETE',
+        ...(confirm ? { body: JSON.stringify({ confirm: true }) } : {}),
+      }, true, requestConfig),
 
     // Get organization members
     getMembers: (orgId: string, requestConfig?: RequestConfig) =>

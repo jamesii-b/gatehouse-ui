@@ -46,7 +46,8 @@ export default function OrgOverviewPage() {
     if (!selectedOrg) return;
     setIsDeleting(true);
     try {
-      await api.organizations.deleteOrganization(selectedOrg.id);
+      // If there are other members, pass confirm=true to acknowledge forced removal.
+      await api.organizations.deleteOrganization(selectedOrg.id, memberCount > 1);
       toast({ title: "Organization deleted", description: `"${selectedOrg.name}" has been deleted.` });
       setDeleteDialogOpen(false);
       // Refresh org list; context will auto-select next available org
@@ -59,19 +60,11 @@ export default function OrgOverviewPage() {
         navigate("/org-setup");
       }
     } catch (err) {
-      if (err instanceof ApiError && err.type === "ORG_HAS_MEMBERS") {
-        toast({
-          title: "Cannot delete organization",
-          description: "This organization still has other members. Transfer ownership or remove all members first.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Deletion failed",
-          description: err instanceof ApiError ? err.message : "An unexpected error occurred.",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Deletion failed",
+        description: err instanceof ApiError ? err.message : "An unexpected error occurred.",
+        variant: "destructive",
+      });
       setDeleteDialogOpen(false);
     } finally {
       setIsDeleting(false);
@@ -220,17 +213,15 @@ export default function OrgOverviewPage() {
               <div>
                 <p className="text-sm font-medium text-destructive">Delete Organization</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Permanently deletes this organization.{" "}
                   {memberCount > 1
-                    ? `You must remove all ${memberCount - 1} other member${memberCount > 2 ? "s" : ""} first.`
-                    : "This action cannot be undone."}
+                    ? `Permanently deletes this organization and removes all ${memberCount - 1} other member${memberCount > 2 ? "s" : ""}. This action cannot be undone.`
+                    : "Permanently deletes this organization. This action cannot be undone."}
                 </p>
               </div>
               <Button
                 variant="destructive"
                 size="sm"
                 onClick={() => setDeleteDialogOpen(true)}
-                disabled={memberCount > 1}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
@@ -253,10 +244,18 @@ export default function OrgOverviewPage() {
               data. This action <strong>cannot be undone</strong>.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            <AlertTriangle className="w-4 h-4 inline mr-2" />
-            You are about to delete <strong>{org?.name}</strong>. All settings,
-            policies, OIDC clients, and CA configurations will be lost.
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-1">
+            <p className="flex items-center gap-1 font-medium">
+              <AlertTriangle className="w-4 h-4 inline mr-1" />
+              You are about to delete <strong>{org?.name}</strong>.
+            </p>
+            <p>All settings, policies, OIDC clients, and CA configurations will be lost.</p>
+            {memberCount > 1 && (
+              <p className="font-medium">
+                This will also remove all {memberCount - 1} other member
+                {memberCount > 2 ? "s" : ""} from the organization.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>

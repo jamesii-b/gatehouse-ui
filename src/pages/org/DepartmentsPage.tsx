@@ -658,9 +658,6 @@ export default function DepartmentsPage() {
                           })
                         )}
                       </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Created {new Date(dept.created_at).toLocaleDateString()}
-                      </div>
 
                       {/* Members toggle */}
                       <button
