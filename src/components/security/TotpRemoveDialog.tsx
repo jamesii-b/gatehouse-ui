@@ -18,6 +18,7 @@ interface TotpRemoveDialogProps {
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   isRequired?: boolean;
+  hasPassword?: boolean;
 }
 
 export function TotpRemoveDialog({
@@ -25,6 +26,7 @@ export function TotpRemoveDialog({
   onOpenChange,
   onSuccess,
   isRequired = false,
+  hasPassword = true,
 }: TotpRemoveDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
@@ -45,7 +47,7 @@ export function TotpRemoveDialog({
   };
 
   const handleRemove = async () => {
-    if (!password) {
+    if (hasPassword && !password) {
       setError("Password is required to disable TOTP");
       return;
     }
@@ -54,7 +56,7 @@ export function TotpRemoveDialog({
     setError(null);
 
     try {
-      await api.totp.disable(password);
+      await api.totp.disable(hasPassword ? password : null);
       
       toast({
         title: "Two-factor authentication disabled",
@@ -80,7 +82,7 @@ export function TotpRemoveDialog({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && password) {
+    if (e.key === "Enter" && (!hasPassword || password)) {
       handleRemove();
     }
   };
@@ -109,25 +111,30 @@ export function TotpRemoveDialog({
         </AlertDialogHeader>
 
         <div className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor="password-confirm">Enter your password to confirm</Label>
-            <Input
-              id="password-confirm"
-              type="password"
-              placeholder="Your current password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              autoFocus
-            />
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-          </div>
+          {hasPassword && (
+            <div className="space-y-2">
+              <Label htmlFor="password-confirm">Enter your password to confirm</Label>
+              <Input
+                id="password-confirm"
+                type="password"
+                placeholder="Your current password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={isLoading}
+                autoFocus
+              />
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+            </div>
+          )}
+          {!hasPassword && error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button
@@ -140,7 +147,7 @@ export function TotpRemoveDialog({
             <Button
               variant="destructive"
               onClick={handleRemove}
-              disabled={isLoading || !password}
+              disabled={isLoading || (hasPassword && !password)}
             >
               {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Remove TOTP

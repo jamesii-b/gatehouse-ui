@@ -42,12 +42,6 @@ export default function ForgotPasswordPage() {
           you'll receive a password reset link shortly.
         </p>
 
-        <BannerAlert
-          type="info"
-          message="For security reasons, we don't confirm whether an account exists. Check your spam folder if you don't see the email."
-          className="mb-6 text-left"
-        />
-
         <div className="space-y-3">
           <Link to="/login">
             <Button variant="outline" className="w-full">

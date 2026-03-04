@@ -29,6 +29,10 @@ export interface User {
   org_role?: string;
   org_id?: string;
   activated?: boolean;
+  // Auth method capabilities — present on /users/me response
+  has_password?: boolean;
+  totp_enabled?: boolean;
+  linked_providers?: string[];
 }
 
 export interface Organization {
@@ -139,6 +143,34 @@ export interface WebAuthnLoginCompleteResponse {
   user: User;
   token: string;
   expires_at: string;
+}
+
+// Admin MFA management types
+export interface AdminMfaMethod {
+  /** Unique identifier: auth_method.id for TOTP, credential id for WebAuthn */
+  id: string;
+  /** 'totp' or 'webauthn' */
+  type: 'totp' | 'webauthn';
+  /** Human-readable name */
+  name: string;
+  device_type?: string;
+  transports?: string[];
+  verified: boolean;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface AdminLinkedAccount {
+  /** UUID of the AuthenticationMethod row */
+  id: string;
+  /** Provider name: 'google' | 'github' | 'microsoft' | 'oidc' */
+  provider_type: string;
+  /** Email address from the OAuth provider, if available */
+  email: string | null;
+  /** Display name from the OAuth provider, if available */
+  name: string | null;
+  /** ISO timestamp when the account was linked */
+  linked_at: string | null;
 }
 
 // External Auth Types
@@ -552,11 +584,70 @@ export const api = {
     unsuspendUser: (userId: string, requestConfig?: RequestConfig) =>
       request<{ user: User }>(`/admin/users/${userId}/unsuspend`, { method: 'POST' }, true, requestConfig),
 
+    // Force-verify a user's email and activate their account (clears stale verification tokens)
+    adminVerifyUserEmail: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ user: User }>(`/admin/users/${userId}/verify-email`, { method: 'POST' }, true, requestConfig),
+
     // Permanently delete a user — revokes certs, cascades DB delete, unrecoverable
     hardDeleteUser: (userId: string, requestConfig?: RequestConfig) =>
       request<{ deleted_user_id: string; deleted_user_email: string; ssh_keys_deleted: number; certs_revoked: number }>(
         `/admin/users/${userId}/delete`,
         { method: 'POST', body: JSON.stringify({ confirm: true }) },
+        true,
+        requestConfig,
+      ),
+
+    // Get all MFA methods configured for a user (admin view)
+    getUserMfa: (userId: string, requestConfig?: RequestConfig) =>
+      request<{ user: { id: string; email: string; full_name: string | null }; mfa_methods: AdminMfaMethod[] }>(
+        `/admin/users/${userId}/mfa`,
+        {},
+        true,
+        requestConfig,
+      ),
+
+    // Remove an MFA method for a user (admin action — use when user lost access)
+    // method_type: 'totp' | 'webauthn' | 'all'
+    // credentialId: optional WebAuthn credential ID to remove a single passkey
+    removeUserMfa: (userId: string, methodType: 'totp' | 'webauthn' | 'all', credentialId?: string, requestConfig?: RequestConfig) => {
+      const qs = credentialId ? `?credential_id=${encodeURIComponent(credentialId)}` : '';
+      return request<{ removed_methods: string[]; removed_count: number; user: { id: string; email: string } }>(
+        `/admin/users/${userId}/mfa/${methodType}${qs}`,
+        { method: 'DELETE' },
+        true,
+        requestConfig,
+      );
+    },
+
+    // Get linked OAuth/OIDC accounts for a user (admin view)
+    getUserLinkedAccounts: (userId: string, requestConfig?: RequestConfig) =>
+      request<{
+        user: { id: string; email: string; full_name: string | null };
+        linked_accounts: AdminLinkedAccount[];
+        total_auth_methods: number;
+      }>(
+        `/admin/users/${userId}/linked-accounts`,
+        {},
+        true,
+        requestConfig,
+      ),
+
+    // Unlink an OAuth/OIDC provider from a user's account (admin action)
+    // provider: provider name ('google', 'github', 'microsoft', 'oidc') or method UUID
+    adminUnlinkUserProvider: (userId: string, provider: string, requestConfig?: RequestConfig) =>
+      request<{ provider: string; user: { id: string; email: string } }>(
+        `/admin/users/${userId}/linked-accounts/${encodeURIComponent(provider)}`,
+        { method: 'DELETE' },
+        true,
+        requestConfig,
+      ),
+
+    // Set or reset a user's password (admin action — no current password needed)
+    // Creates the password auth method if the user doesn't have one (e.g. OAuth-only users)
+    adminSetUserPassword: (userId: string, password: string, requestConfig?: RequestConfig) =>
+      request<{ user: { id: string; email: string } }>(
+        `/admin/users/${userId}/password`,
+        { method: 'POST', body: JSON.stringify({ password }) },
         true,
         requestConfig,
       ),
@@ -622,10 +713,10 @@ export const api = {
       request<TotpStatusResponse>('/auth/totp/status'),
 
     // Disable TOTP - wrong password should not log user out
-    disable: (password: string) =>
+    disable: (password?: string | null) =>
       request<{ message: string }>('/auth/totp/disable', {
         method: 'DELETE',
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: password || null }),
       }, true, { clearTokenOn401: false }),
 
     // Regenerate backup codes - wrong password should not log user out
@@ -1046,7 +1137,7 @@ export const api = {
         false,
       ),
 
-    // Accept invite (unauthenticated) — password/name only needed for new accounts
+    // Accept invite — sends Bearer token if present (OAuth users skip password)
     accept: (token: string, full_name?: string, password?: string) =>
       request<LoginResponse>(
         `/invites/${token}/accept`,
@@ -1054,7 +1145,7 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ full_name, password, password_confirm: password }),
         },
-        false,
+        true,
       ),
   },
 
