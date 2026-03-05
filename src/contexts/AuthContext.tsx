@@ -32,7 +32,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // LocalStorage key for MFA compliance persistence
-const MFA_COMPLIANCE_KEY = 'gatehouse_mfa_compliance';
+const MFA_COMPLIANCE_KEY = 'secuird_mfa_compliance';
 
 // Helper to persist MFA compliance to localStorage
 function persistMfaCompliance(compliance: MfaComplianceSummary | null): void {

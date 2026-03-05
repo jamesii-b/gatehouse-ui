@@ -172,7 +172,7 @@ export default function LinkedAccountsPage() {
       <Alert className="mb-6">
         <AlertCircle className="w-4 h-4" />
         <AlertDescription>
-          Linked accounts can only be used to sign in to an existing Gatehouse account.
+          Linked accounts can only be used to sign in to an existing Secuird account.
           They cannot be used to create new accounts.
         </AlertDescription>
       </Alert>

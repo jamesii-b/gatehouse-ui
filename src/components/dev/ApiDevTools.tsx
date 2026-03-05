@@ -65,9 +65,9 @@ const isDev = import.meta.env.DEV;
 const originalFetch = window.fetch;
 
 // Avoid patching multiple times during HMR
-const globalAny = window as unknown as { __gatehouseFetchPatched?: boolean };
-if (isDev && !globalAny.__gatehouseFetchPatched) {
-  globalAny.__gatehouseFetchPatched = true;
+const globalAny = window as unknown as { __secuirdFetchPatched?: boolean };
+if (isDev && !globalAny.__secuirdFetchPatched) {
+  globalAny.__secuirdFetchPatched = true;
 
   try {
     window.fetch = async function (input, init) {
@@ -165,9 +165,9 @@ if (isDev && !globalAny.__gatehouseFetchPatched) {
     };
   } catch (patchError) {
     // Log any errors during fetch patching with full stack trace
-    console.error("[Gatehouse DevTools] Failed to patch fetch:", patchError);
+    console.error("[Secuird DevTools] Failed to patch fetch:", patchError);
     if (patchError instanceof Error) {
-      console.error("[Gatehouse DevTools] Stack trace:", patchError.stack);
+      console.error("[Secuird DevTools] Stack trace:", patchError.stack);
     }
   }
 }
@@ -220,7 +220,7 @@ export default function ApiDevTools() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-sm">Gatehouse API DevTools</span>
+          <span className="font-semibold text-sm">Secuird API DevTools</span>
           <Badge variant="outline" className="text-xs border-slate-600">
             {logs.length} requests
           </Badge>

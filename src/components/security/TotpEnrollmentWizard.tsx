@@ -275,7 +275,7 @@ export function TotpEnrollmentWizard({
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Open your authenticator app and enter the 6-digit code shown for Gatehouse.
+                Open your authenticator app and enter the 6-digit code shown for Secuird.
               </p>
 
               <div className="flex justify-end gap-2 pt-2">

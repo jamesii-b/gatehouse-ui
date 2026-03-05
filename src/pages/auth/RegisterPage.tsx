@@ -108,7 +108,7 @@ export default function RegisterPage() {
           Create your account
         </h1>
         <p className="text-muted-foreground mt-2">
-          Get started with Gatehouse in seconds
+          Get started with Secuird in seconds
         </p>
       </div>
 

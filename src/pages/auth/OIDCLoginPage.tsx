@@ -1,7 +1,7 @@
 /**
  * OIDCLoginPage — Standalone OIDC proxy login UI
  *
- * Unified entry point for OIDC authorization flows via the Gatehouse OIDC bridge.
+ * Unified entry point for OIDC authorization flows via the Secuird OIDC bridge.
  * Handles:
  *   1. Unauthenticated users → shows an email/password login form
  *   2. Already-authenticated users → shows a consent/approval screen directly
@@ -9,7 +9,7 @@
  * Route: /oidc-login?oidc_session_id=<id>
  *
  * Configure your oauth2-proxy / OIDC client's login_url to:
- *   https://<gatehouse-ui>/oidc-login
+ *   https://<secuird-ui>/oidc-login
  */
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
@@ -37,7 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ApiError, tokenManager } from "@/lib/api";
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const GATEHOUSE_OIDC = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api/v1")
+const SECUIRD_OIDC = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api/v1")
   .replace(/\/api\/v1\/?$/, "");
 
 // ── Scope display metadata ────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ type PageStep = "loading" | "login" | "consent" | "error";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 async function fetchOIDCContext(oidcSessionId: string): Promise<OIDCContext> {
-  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/begin`, {
+  const res = await fetch(`${SECUIRD_OIDC}/oidc/begin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ oidc_session_id: oidcSessionId }),
@@ -75,7 +75,7 @@ async function fetchOIDCContext(oidcSessionId: string): Promise<OIDCContext> {
 }
 
 async function completeOIDCFlow(oidcSessionId: string, token: string): Promise<string> {
-  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+  const res = await fetch(`${SECUIRD_OIDC}/oidc/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ oidc_session_id: oidcSessionId, token }),

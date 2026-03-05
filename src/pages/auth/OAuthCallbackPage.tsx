@@ -9,11 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 
 type CallbackState = 'loading' | 'success' | 'error';
 
-const GATEHOUSE_API = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1') as string;
-const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
+const SECUIRD_API = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1') as string;
+const SECUIRD_OIDC = SECUIRD_API.replace(/\/api\/v1\/?$/, '');
 
 async function completeOidcFlow(oidcSessionId: string, token: string): Promise<string> {
-  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+  const res = await fetch(`${SECUIRD_OIDC}/oidc/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ oidc_session_id: oidcSessionId, token }),
@@ -24,7 +24,7 @@ async function completeOidcFlow(oidcSessionId: string, token: string): Promise<s
 }
 
 /**
- * OAuth callback page that handles the redirect from the Gatehouse backend
+ * OAuth callback page that handles the redirect from the Secuird backend
  * after a successful (or failed) OAuth provider authentication.
  *
  * The backend exchanges the provider code for a session token and then
@@ -134,7 +134,7 @@ export default function OAuthCallbackPage() {
             return;
           } catch (oidcErr) {
             if (import.meta.env.DEV) {
-              console.error("[Gatehouse] OIDC completion failed after OAuth:", oidcErr);
+              console.error("[Secuird] OIDC completion failed after OAuth:", oidcErr);
             }
             // Fall through to normal flow on failure — user is still logged in
           }
@@ -163,7 +163,7 @@ export default function OAuthCallbackPage() {
         setStatus('error');
         setError("Failed to load your profile. Please try signing in again.");
         if (import.meta.env.DEV) {
-          console.error("[Gatehouse] OAuth callback refreshUser failed:", err);
+          console.error("[Secuird] OAuth callback refreshUser failed:", err);
         }
       }
     };

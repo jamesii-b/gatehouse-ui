@@ -261,7 +261,7 @@ export default function CAsPage() {
           <div>
             <h1 className="page-title">Certificate Authorities</h1>
             <p className="page-description">
-              Manage your organization's SSH CAs with <code>Gatehouse</code>
+              Manage your organization's SSH CAs with <code>Secuird</code>
             </p>
           </div>
         </div>

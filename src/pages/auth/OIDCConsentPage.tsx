@@ -6,8 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { tokenManager } from "@/lib/api";
 
-const GATEHOUSE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1';
-const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
+const SECUIRD_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1';
+const SECUIRD_OIDC = SECUIRD_API.replace(/\/api\/v1\/?$/, '');
 
 const SCOPE_META: Record<string, { icon: typeof Shield; label: string; description: string }> = {
   openid: { icon: Shield, label: "OpenID", description: "Verify your identity" },
@@ -41,7 +41,7 @@ export default function OIDCConsentPage() {
 
     (async () => {
       try {
-        const res = await fetch(`${GATEHOUSE_OIDC}/oidc/begin`, {
+        const res = await fetch(`${SECUIRD_OIDC}/oidc/begin`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ oidc_session_id: oidcSessionId }),
@@ -67,7 +67,7 @@ export default function OIDCConsentPage() {
         navigate(`/login?oidc_session_id=${context.oidc_session_id}`);
         return;
       }
-      const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+      const res = await fetch(`${SECUIRD_OIDC}/oidc/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ oidc_session_id: context.oidc_session_id, token }),

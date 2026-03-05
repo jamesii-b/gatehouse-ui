@@ -1,5 +1,5 @@
 import { Outlet, Link } from "react-router-dom";
-import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
+import { SecuirdLogo } from "@/components/branding/SecuirdLogo";
 
 export default function PublicLayout() {
   return (
@@ -11,8 +11,8 @@ export default function PublicLayout() {
       <header className="relative z-10 w-full py-6 px-4">
         <div className="max-w-md mx-auto">
           <Link to="/" className="flex items-center gap-2.5 justify-center">
-            <GatehouseLogo size="md" />
-            <span className="text-xl font-semibold text-foreground tracking-tight">Gatehouse</span>
+            <SecuirdLogo size="md" />
+            <span className="text-xl font-semibold text-foreground tracking-tight">Secuird</span>
           </Link>
         </div>
       </header>
@@ -28,7 +28,7 @@ export default function PublicLayout() {
       <footer className="relative z-10 py-6 px-4">
         <div className="max-w-md mx-auto text-center">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Gatehouse. Identity & Access.
+            © {new Date().getFullYear()} Secuird. Identity & Access.
           </p>
         </div>
       </footer>

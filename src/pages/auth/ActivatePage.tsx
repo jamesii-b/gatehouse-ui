@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { CheckCircle, XCircle, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
+import { SecuirdLogo } from "@/components/branding/SecuirdLogo";
 import { api, ApiError } from "@/lib/api";
 
 type Status = "loading" | "success" | "error" | "missing";
@@ -42,7 +42,7 @@ export default function ActivatePage() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex justify-center">
-          <GatehouseLogo size="md" />
+          <SecuirdLogo size="md" />
         </div>
 
         <Card>
