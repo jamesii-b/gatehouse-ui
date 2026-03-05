@@ -20,6 +20,12 @@ import {
   XCircle,
   Crown,
   Trash2,
+  ShieldOff,
+  Link2,
+  Unlink,
+  Smartphone,
+  KeyRound,
+  Lock,
 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -60,7 +66,7 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { api, OrganizationMember, ApiError, OrgInvite, SSHKey, User as ApiUser } from "@/lib/api";
+import { api, OrganizationMember, ApiError, OrgInvite, SSHKey, User as ApiUser, AdminMfaMethod, AdminLinkedAccount } from "@/lib/api";
 import { useCurrentOrganizationId } from "@/hooks/useCurrentOrganization";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -83,6 +89,10 @@ function formatDate(d: string | null | undefined) {
     month: "short",
     day: "numeric",
   });
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function isSuspended(status: string | undefined) {
@@ -133,6 +143,24 @@ export default function MembersPage() {
   const [userSshKeys, setUserSshKeys] = useState<SSHKey[]>([]);
   const [isDrawerLoading, setIsDrawerLoading] = useState(false);
 
+  // ── MFA management (drawer) ──────────────────────────────────────────────────
+  const [userMfaMethods, setUserMfaMethods] = useState<AdminMfaMethod[]>([]);
+  const [removingMfaId, setRemovingMfaId] = useState<string | null>(null);
+  const [showRemoveAllMfa, setShowRemoveAllMfa] = useState(false);
+  const [isRemovingAllMfa, setIsRemovingAllMfa] = useState(false);
+
+  // ── Linked OAuth accounts (drawer) ──────────────────────────────────────────
+  const [userLinkedAccounts, setUserLinkedAccounts] = useState<AdminLinkedAccount[]>([]);
+  const [totalAuthMethods, setTotalAuthMethods] = useState(0);
+  const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
+
+  // ── Admin set / change password (drawer) ────────────────────────────────────
+  const [adminPwNew, setAdminPwNew] = useState("");
+  const [adminPwConfirm, setAdminPwConfirm] = useState("");
+  const [adminPwError, setAdminPwError] = useState<string | null>(null);
+  const [isSettingPw, setIsSettingPw] = useState(false);
+  const [adminPwSuccess, setAdminPwSuccess] = useState(false);
+
   // ── Suspend / Unsuspend ──────────────────────────────────────────────────────
   const [isSuspending, setIsSuspending] = useState(false);
   const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
@@ -156,13 +184,94 @@ export default function MembersPage() {
   const [removeMember, setRemoveMember] = useState<OrganizationMember | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
+  // ── Remove MFA (drawer) ─────────────────────────────────────────────────────────
+  const handleRemoveMfaMethod = async (method: AdminMfaMethod) => {
+    if (!selectedMember) return;
+    setRemovingMfaId(method.id);
+    try {
+      const methodType = method.type as 'totp' | 'webauthn';
+      const credId = method.type === 'webauthn' ? method.id : undefined;
+      await api.admin.removeUserMfa(selectedMember.user_id, methodType, credId);
+      const refreshed = await api.admin.getUserMfa(selectedMember.user_id);
+      setUserMfaMethods(refreshed.mfa_methods);
+      toast({ title: 'MFA method removed', description: `${method.name} has been removed for ${selectedMember.user?.email}.` });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Failed to remove MFA method', description: err instanceof ApiError ? err.message : 'Something went wrong.' });
+    } finally {
+      setRemovingMfaId(null);
+    }
+  };
+
+  const handleRemoveAllMfa = async () => {
+    if (!selectedMember) return;
+    setIsRemovingAllMfa(true);
+    try {
+      await api.admin.removeUserMfa(selectedMember.user_id, 'all');
+      setUserMfaMethods([]);
+      setShowRemoveAllMfa(false);
+      toast({ title: 'All MFA methods removed', description: `All MFA methods for ${selectedMember.user?.email} have been cleared.` });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Failed to remove MFA methods', description: err instanceof ApiError ? err.message : 'Something went wrong.' });
+    } finally {
+      setIsRemovingAllMfa(false);
+    }
+  };
+
+  // ── Unlink OAuth provider (drawer) ────────────────────────────────────────────
+  const handleUnlinkProvider = async (account: AdminLinkedAccount) => {
+    if (!selectedMember) return;
+    setUnlinkingProvider(account.id);
+    try {
+      await api.admin.adminUnlinkUserProvider(selectedMember.user_id, account.provider_type);
+      setUserLinkedAccounts((prev) => prev.filter((a) => a.id !== account.id));
+      setTotalAuthMethods((prev) => prev - 1);
+      toast({ title: 'Provider unlinked', description: `${capitalize(account.provider_type)} has been unlinked from ${selectedMember.user?.email}.` });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Failed to unlink provider', description: err instanceof ApiError ? err.message : 'Something went wrong.' });
+    } finally {
+      setUnlinkingProvider(null);
+    }
+  };
+
+  // ── Admin set / change password ──────────────────────────────────────────────
+  const handleAdminSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMember) return;
+    setAdminPwError(null);
+    setAdminPwSuccess(false);
+    if (adminPwNew.length < 8) {
+      setAdminPwError("Password must be at least 8 characters.");
+      return;
+    }
+    if (adminPwNew !== adminPwConfirm) {
+      setAdminPwError("Passwords do not match.");
+      return;
+    }
+    setIsSettingPw(true);
+    try {
+      await api.admin.adminSetUserPassword(selectedMember.user_id, adminPwNew);
+      setAdminPwNew("");
+      setAdminPwConfirm("");
+      setAdminPwSuccess(true);
+      // Refresh detailUser so has_password reflects the new state
+      const refreshed = await api.admin.getUser(selectedMember.user_id);
+      setDetailUser(refreshed.user);
+      toast({ title: detailUser?.has_password ? "Password updated" : "Password set", description: `Password ${detailUser?.has_password ? "changed" : "created"} for ${selectedMember.user?.email}.` });
+    } catch (err) {
+      setAdminPwError(err instanceof ApiError ? err.message : "Failed to update password.");
+    } finally {
+      setIsSettingPw(false);
+    }
+  };
+
+
   // ── Invite ───────────────────────────────────────────────────────────────────
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  // Invite link dialog (when SMTP not configured)
+  // Invite link dialog
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkEmail, setInviteLinkEmail] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
@@ -226,10 +335,24 @@ export default function MembersPage() {
     setDetailUser(null);
     setUserSshKeys([]);
     setIsDrawerLoading(true);
+    setUserMfaMethods([]);
+    setUserLinkedAccounts([]);
+    setTotalAuthMethods(0);
     try {
-      const data = await api.admin.getUser(member.user_id);
-      setDetailUser(data.user);
-      setUserSshKeys(data.ssh_keys);
+      const [userData, mfaData, linkedData] = await Promise.allSettled([
+        api.admin.getUser(member.user_id),
+        api.admin.getUserMfa(member.user_id),
+        api.admin.getUserLinkedAccounts(member.user_id),
+      ]);
+      if (userData.status === 'fulfilled') {
+        setDetailUser(userData.value.user);
+        setUserSshKeys(userData.value.ssh_keys);
+      }
+      if (mfaData.status === 'fulfilled') setUserMfaMethods(mfaData.value.mfa_methods);
+      if (linkedData.status === 'fulfilled') {
+        setUserLinkedAccounts(linkedData.value.linked_accounts);
+        setTotalAuthMethods(linkedData.value.total_auth_methods);
+      }
     } catch {
       // Non-fatal — drawer still shows member info
     } finally {
@@ -241,6 +364,13 @@ export default function MembersPage() {
     setSelectedMember(null);
     setDetailUser(null);
     setUserSshKeys([]);
+    setUserMfaMethods([]);
+    setUserLinkedAccounts([]);
+    setTotalAuthMethods(0);
+    setAdminPwNew("");
+    setAdminPwConfirm("");
+    setAdminPwError(null);
+    setAdminPwSuccess(false);
   };
 
   // ── Role change (drawer inline select) ──────────────────────────────────────
@@ -948,6 +1078,190 @@ export default function MembersPage() {
                     </div>
                   )}
 
+                  {/* MFA Methods */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-6 p-4 border rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                          <ShieldOff className="w-4 h-4" />
+                          MFA / 2FA Methods
+                        </h3>
+                        {userMfaMethods.length > 1 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowRemoveAllMfa(true)}
+                            className="text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                          >
+                            <Trash2 className="w-3 h-3 mr-1" />
+                            Remove all
+                          </Button>
+                        )}
+                      </div>
+                      {isDrawerLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : userMfaMethods.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No MFA methods configured.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {userMfaMethods.map((method) => (
+                            <div key={method.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {method.type === "totp" ? (
+                                  <Smartphone className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                ) : (
+                                  <KeyRound className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{method.name}</p>
+                                  {method.last_used_at && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Last used: {formatDate(method.last_used_at)}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleRemoveMfaMethod(method)}
+                                disabled={removingMfaId === method.id}
+                                className="text-red-600 hover:bg-red-50 flex-shrink-0 ml-2"
+                                title={`Remove ${method.name}`}
+                              >
+                                {removingMfaId === method.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Remove an MFA method if the user has lost access (e.g. lost phone or passkey). They can re-enroll after removal.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Linked OAuth Accounts */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-6 p-4 border rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Link2 className="w-4 h-4" />
+                        Linked OAuth Accounts
+                      </h3>
+                      {isDrawerLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : userLinkedAccounts.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No OAuth providers linked.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {userLinkedAccounts.map((account) => {
+                            const isOnlyMethod = totalAuthMethods <= 1;
+                            return (
+                              <div key={account.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Link2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="font-medium capitalize">{account.provider_type}</p>
+                                    {account.email && (
+                                      <p className="text-xs text-muted-foreground truncate">{account.email}</p>
+                                    )}
+                                    {account.linked_at && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Linked: {formatDate(account.linked_at)}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleUnlinkProvider(account)}
+                                  disabled={unlinkingProvider === account.id || isOnlyMethod}
+                                  className="text-red-600 hover:bg-red-50 flex-shrink-0 ml-2"
+                                  title={isOnlyMethod ? "Cannot unlink — this is the user's only sign-in method" : `Unlink ${account.provider_type}`}
+                                >
+                                  {unlinkingProvider === account.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Unlink className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Unlink a provider to prevent sign-in via that provider. Cannot unlink if it is the user's only sign-in method.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Password Management */}
+                  {selectedMember.user?.id !== currentUser?.id && (
+                    <div className="mb-2 p-4 border rounded-lg space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Lock className="w-4 h-4" />
+                        {detailUser?.has_password ? "Reset Password" : "Set Password"}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {detailUser?.has_password
+                          ? "Override this user's current password. They will need to use the new password on next login."
+                          : "This user has no password configured (sign-in via OIDC/OAuth only). Set one to enable email/password login."}
+                      </p>
+                      <form onSubmit={handleAdminSetPassword} className="space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="New password"
+                          value={adminPwNew}
+                          onChange={(e) => { setAdminPwNew(e.target.value); setAdminPwError(null); setAdminPwSuccess(false); }}
+                          disabled={isSettingPw}
+                          autoComplete="new-password"
+                        />
+                        <Input
+                          type="password"
+                          placeholder="Confirm password"
+                          value={adminPwConfirm}
+                          onChange={(e) => { setAdminPwConfirm(e.target.value); setAdminPwError(null); setAdminPwSuccess(false); }}
+                          disabled={isSettingPw}
+                          autoComplete="new-password"
+                        />
+                        {adminPwError && (
+                          <p className="text-sm text-destructive flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            {adminPwError}
+                          </p>
+                        )}
+                        {adminPwSuccess && (
+                          <p className="text-sm text-green-600 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                            Password updated successfully.
+                          </p>
+                        )}
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="outline"
+                          disabled={isSettingPw || !adminPwNew || !adminPwConfirm}
+                        >
+                          {isSettingPw ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+                          ) : (
+                            <><Lock className="w-4 h-4 mr-2" />{detailUser?.has_password ? "Reset password" : "Set password"}</>
+                          )}
+                        </Button>
+                      </form>
+                    </div>
+                  )}
+
                   {/* SSH Keys */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -1048,6 +1362,31 @@ export default function MembersPage() {
             <Button onClick={handleAddKey} disabled={isAddingKey || !addKeyPublicKey.trim()}>
               {isAddingKey && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Add key
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Remove all MFA confirmation dialog ───────────────────────────── */}
+      <Dialog open={showRemoveAllMfa} onOpenChange={setShowRemoveAllMfa}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Remove all MFA methods?
+            </DialogTitle>
+            <DialogDescription>
+              This will remove <strong>all</strong> MFA methods (TOTP and passkeys) for{" "}
+              <strong>{selectedMember?.user?.email}</strong>. They will be able to re-enroll after this action.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRemoveAllMfa(false)} disabled={isRemovingAllMfa}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleRemoveAllMfa} disabled={isRemovingAllMfa}>
+              {isRemovingAllMfa && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Remove all MFA
             </Button>
           </DialogFooter>
         </DialogContent>

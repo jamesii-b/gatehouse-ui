@@ -271,9 +271,6 @@ export default function PrincipalsPage() {
                         })}
                       </div>
 
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Created {new Date(principal.created_at).toLocaleDateString()}
-                      </div>
                     </div>
 
                     <DropdownMenu>

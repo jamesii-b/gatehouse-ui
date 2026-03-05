@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Background - Primary color (Teal #36b9a6) -->
+  <rect width="24" height="24" rx="3" fill="#36b9a6"/>
+  
+  <!-- Left pillar -->
+  <path d="M4 4h3v16H4V4z" fill="#ffffff"/>
+  
+  <!-- Right pillar -->
+  <path d="M17 4h3v16h-3V4z" fill="#ffffff"/>
+  
+  <!-- Archway -->
+  <path d="M7 4h10v3H7V4z" fill="#ffffff" opacity="0.7"/>
+  
+  <!-- Keyhole -->
+  <circle cx="12" cy="14" r="2" fill="#ffffff" opacity="0.5"/>
+</svg>

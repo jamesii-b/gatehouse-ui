@@ -13,6 +13,7 @@ import {
   ScrollText,
   Terminal,
   ShieldCheck,
+  Key,
 } from "lucide-react";
 import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
 import { NavLink } from "@/components/NavLink";
@@ -57,8 +58,9 @@ const orgAdminNavItems = [
 
 const adminNavItems = [
   { title: "Certificate Auth.", url: "/org/cas", icon: ShieldCheck },
-  { title: "Org Audit Log", url: "/org/audit", icon: FileText },
-  { title: "System Logs",  url: "/admin/audit", icon: ScrollText },
+  { title: "OIDC Clients",     url: "/org/clients", icon: Key },
+  { title: "Org Audit Log",    url: "/org/audit", icon: FileText },
+  { title: "System Logs",      url: "/admin/audit", icon: ScrollText },
 ];
 
 export function AppSidebar() {

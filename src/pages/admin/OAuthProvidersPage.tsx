@@ -42,18 +42,20 @@ const PROVIDER_LOGOS: Record<string, string> = {
   microsoft: "https://www.microsoft.com/favicon.ico",
 };
 
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1') as string;
+
 const PROVIDER_HELP: Record<string, { docsUrl: string; callbackNote: string }> = {
   google: {
     docsUrl: "https://console.cloud.google.com/apis/credentials",
-    callbackNote: "Authorized redirect URI: http://localhost:5000/api/v1/auth/external/google/callback",
+    callbackNote: `Authorized redirect URI: ${API_BASE}/auth/external/google/callback`,
   },
   github: {
     docsUrl: "https://github.com/settings/applications/new",
-    callbackNote: "Authorization callback URL: http://localhost:5000/api/v1/auth/external/github/callback",
+    callbackNote: `Authorization callback URL: ${API_BASE}/auth/external/github/callback`,
   },
   microsoft: {
     docsUrl: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps",
-    callbackNote: "Redirect URI: http://localhost:5000/api/v1/auth/external/microsoft/callback",
+    callbackNote: `Redirect URI: ${API_BASE}/auth/external/microsoft/callback`,
   },
 };
 

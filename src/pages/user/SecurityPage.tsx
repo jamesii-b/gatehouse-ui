@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Lock, Fingerprint, Smartphone, Shield, Plus, CheckCircle, Loader2, Pencil, Trash2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { AddPasskeyWizard } from "@/components/security/AddPasskeyWizard";
 import { TotpEnrollmentWizard } from "@/components/security/TotpEnrollmentWizard";
 import { TotpRemoveDialog } from "@/components/security/TotpRemoveDialog";
 import { PasswordStrengthMeter, isPasswordValid } from "@/components/auth/PasswordStrengthMeter";
-import { api, ApiError, TotpStatusResponse, PasskeyCredential } from "@/lib/api";
+import { api, ApiError, TotpStatusResponse, PasskeyCredential, User } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { ComplianceBanner } from "@/components/auth/ComplianceBanner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,6 +29,9 @@ export default function SecurityPage() {
   const [showAddPasskey, setShowAddPasskey] = useState(false);
   const [showTotpEnrollment, setShowTotpEnrollment] = useState(false);
   const [showTotpRemove, setShowTotpRemove] = useState(false);
+
+  // Profile (for has_password / linked_providers)
+  const [profile, setProfile] = useState<User | null>(null);
   
   // Password form state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -53,18 +56,48 @@ export default function SecurityPage() {
   const { toast } = useToast();
   const { mfaCompliance } = useAuth();
 
-  // Policy requirements (could come from org settings in future)
+  // Whether this user has a password (false for pure OAuth signups)
+  const hasPassword = profile?.has_password ?? true; // default true until loaded
+  const linkedProviders = profile?.linked_providers ?? [];
+
+  // Derive policy requirements from actual org compliance data
+  const effectiveModes = mfaCompliance?.orgs?.map(o => o.effective_mode) ?? [];
   const policyRequirements = {
-    totpRequired: true,
-    passkeysRequired: false,
+    totpRequired: effectiveModes.some(m =>
+      m === 'require_totp' || m === 'require_totp_or_webauthn'
+    ),
+    passkeysRequired: effectiveModes.some(m =>
+      m === 'require_webauthn' || m === 'require_totp_or_webauthn'
+    ),
     minPasswordLength: 12,
   };
+  // Build a human-readable policy description from the strictest mode active
+  const activePolicyModes = effectiveModes.filter(m => m && m.startsWith('require_'));
+  const policyDescription = (() => {
+    if (activePolicyModes.includes('require_totp_or_webauthn'))
+      return 'Your organization requires TOTP or a passkey for all members.';
+    if (activePolicyModes.includes('require_totp'))
+      return 'Your organization requires TOTP to be enabled for all members.';
+    if (activePolicyModes.includes('require_webauthn'))
+      return 'Your organization requires a passkey for all members.';
+    return null;
+  })();
 
   // Fetch TOTP status on mount
   useEffect(() => {
+    fetchProfile();
     fetchTotpStatus();
     fetchPasskeys();
   }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const res = await api.users.me();
+      setProfile(res.user);
+    } catch {
+      // Non-fatal — UI falls back to showing password section
+    }
+  };
 
   const fetchTotpStatus = async () => {
     setIsTotpStatusLoading(true);
@@ -234,20 +267,20 @@ export default function SecurityPage() {
       <ComplianceBanner compliance={mfaCompliance} />
 
       <div className="space-y-6">
-        {/* Policy Status */}
-        <Card className="border-accent/30 bg-accent/5">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <Shield className="w-5 h-5 text-accent mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Organization Policy</p>
-                <p className="text-sm text-muted-foreground">
-                  Your organization requires TOTP to be enabled for all members.
-                </p>
+        {/* Policy Status — only shown when the org actually enforces MFA */}
+        {policyDescription && (
+          <Card className="border-accent/30 bg-accent/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Shield className="w-5 h-5 text-accent mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Organization Policy</p>
+                  <p className="text-sm text-muted-foreground">{policyDescription}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Password */}
         <Card>
@@ -260,16 +293,40 @@ export default function SecurityPage() {
                 </CardTitle>
                 <CardDescription>Manage your account password</CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowPasswordForm(!showPasswordForm)}
-              >
-                Change password
-              </Button>
+              {hasPassword ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPasswordForm(!showPasswordForm)}
+                >
+                  Change password
+                </Button>
+              ) : (
+                <Badge variant="outline" className="text-xs text-muted-foreground">
+                  Not set
+                </Badge>
+              )}
             </div>
           </CardHeader>
-          {showPasswordForm && (
+          {!hasPassword && linkedProviders.length > 0 && (
+            <CardContent className="border-t pt-4">
+              <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Link2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <p>
+                  Your account uses{" "}
+                  <span className="font-medium text-foreground">
+                    {linkedProviders
+                      .map((p) =>
+                        ({ google: "Google", github: "GitHub", microsoft: "Microsoft", oidc: "SSO" }[p] ?? p)
+                      )
+                      .join(", ")}
+                  </span>{" "}
+                  for sign-in. No password is set. Contact your admin if you need one added.
+                </p>
+              </div>
+            </CardContent>
+          )}
+          {hasPassword && showPasswordForm && (
             <CardContent className="space-y-4 border-t pt-4">
               {passwordError && (
                 <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
@@ -505,6 +562,7 @@ export default function SecurityPage() {
           setShowTotpRemove(false);
         }}
         isRequired={policyRequirements.totpRequired}
+        hasPassword={hasPassword}
       />
 
       {/* Delete Passkey Confirmation */}
