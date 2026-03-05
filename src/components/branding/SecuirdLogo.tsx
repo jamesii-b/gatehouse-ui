@@ -1,21 +1,21 @@
 import { cn } from "@/lib/utils";
 
-interface GatehouseLogoProps {
+interface SecuirdLogoProps {
   size?: "sm" | "md" | "lg";
   variant?: "default" | "light";
   className?: string;
 }
 
 /**
- * Gatehouse Logo - Abstract gate/doorway mark
+ * Secuird Logo - Abstract gate/doorway mark
  * Represents controlled entry and policy enforcement
  * Two vertical pillars forming a gateway with negative space
  */
-export function GatehouseLogo({ 
+export function SecuirdLogo({ 
   size = "md", 
   variant = "default",
   className 
-}: GatehouseLogoProps) {
+}: SecuirdLogoProps) {
   const sizeClasses = {
     sm: "w-8 h-8",
     md: "w-9 h-9",

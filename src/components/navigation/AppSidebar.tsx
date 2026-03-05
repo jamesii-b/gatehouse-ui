@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Key,
 } from "lucide-react";
-import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
+import { SecuirdLogo } from "@/components/branding/SecuirdLogo";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -84,10 +84,10 @@ export function AppSidebar() {
       {/* Logo */}
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <GatehouseLogo size="sm" variant="light" />
+          <SecuirdLogo size="sm" variant="light" />
           {!collapsed && (
             <span className="text-lg font-semibold text-sidebar-foreground tracking-tight">
-              Gatehouse
+              Secuird
             </span>
           )}
         </div>

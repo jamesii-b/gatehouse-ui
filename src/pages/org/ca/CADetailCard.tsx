@@ -47,7 +47,7 @@ export function CADetailCard({ ca, onEdit, onRotate, onDelete }: CADetailCardPro
   const isSystem = !!ca.is_system;
 
   // ── User CA: server trusts this public key so it accepts user certs ──────
-  const userCaServerSnippet = `# On each SSH server — trust Gatehouse-issued user certificates:
+  const userCaServerSnippet = `# On each SSH server — trust Secuird-issued user certificates:
 echo '${ca.public_key.trim()}' >> /etc/ssh/trusted_user_ca_keys
 
 # /etc/ssh/sshd_config  (add once, then reload sshd):
@@ -63,7 +63,7 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
 # ─── Server side (separate step) ────────────────────────────────────────────
 # 1. Collect the server's HOST public key:
 #    cat /etc/ssh/ssh_host_ed25519_key.pub
-# 2. Submit it to Gatehouse → "Issue Host Certificate" to get a signed cert.
+# 2. Submit it to Secuird → "Issue Host Certificate" to get a signed cert.
 # 3. Install the cert on the server:
 #    /etc/ssh/sshd_config:
 #    HostKey         /etc/ssh/ssh_host_ed25519_key
@@ -200,8 +200,8 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
               <span className="flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5" />
                 {isUser
-                  ? "Server setup — trust Gatehouse user certificates"
-                  : "Client setup — trust Gatehouse host certificates"}
+                  ? "Server setup — trust Secuird user certificates"
+                  : "Client setup — trust Secuird host certificates"}
               </span>
             </AccordionTrigger>
             <AccordionContent className="pb-3">
@@ -209,7 +209,7 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
                 <div className="mb-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-300">
                   <strong>Two separate steps:</strong> (1) Put this CA public key in client{" "}
                   <code className="font-mono">known_hosts</code>. (2) Issue a host certificate
-                  for each server via Gatehouse and install it as{" "}
+                  for each server via Secuird and install it as{" "}
                   <code className="font-mono">HostCertificate</code>.
                 </div>
               )}

@@ -160,7 +160,7 @@ export default function OIDCClientsPage() {
       <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="page-title">OIDC Clients</h1>
-          <p className="page-description">Applications that authenticate via Gatehouse</p>
+          <p className="page-description">Applications that authenticate via Secuird</p>
         </div>
         <Button onClick={() => setDialogMode("generic")}>
           <Plus className="w-4 h-4 mr-2" />
@@ -235,7 +235,7 @@ export default function OIDCClientsPage() {
             <Network className="w-10 h-10 text-muted-foreground/40" />
             <div>
               <p className="font-medium text-muted-foreground">No OIDC clients yet</p>
-              <p className="text-sm text-muted-foreground/70">Register an app to let it authenticate via Gatehouse</p>
+              <p className="text-sm text-muted-foreground/70">Register an app to let it authenticate via Secuird</p>
             </div>
             <div className="flex gap-2 flex-wrap justify-center">
               <Button variant="outline" onClick={() => setDialogMode("generic")}>
@@ -320,7 +320,7 @@ export default function OIDCClientsPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add OIDC Client</DialogTitle>
-            <DialogDescription>Register an application to authenticate via Gatehouse</DialogDescription>
+            <DialogDescription>Register an application to authenticate via Secuird</DialogDescription>
           </DialogHeader>
 
           <Tabs

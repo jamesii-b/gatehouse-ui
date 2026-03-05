@@ -27,8 +27,8 @@ import { OAuthProvider } from "@/lib/oauth";
 
 type LoginStep = 'credentials' | 'totp' | 'webauthn' | 'passkey-email' | 'mfa-enrollment' | 'mfa';
 
-const GATEHOUSE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1';
-const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
+const SECUIRD_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1';
+const SECUIRD_OIDC = SECUIRD_API.replace(/\/api\/v1\/?$/, '');
 
 /**
  * Complete an OIDC authorization flow after the user has authenticated.
@@ -36,7 +36,7 @@ const GATEHOUSE_OIDC = GATEHOUSE_API.replace(/\/api\/v1\/?$/, '');
  * the auth code and returns the redirect URL for the calling application.
  */
 async function completeOidcFlow(oidcSessionId: string, token: string): Promise<string> {
-  const res = await fetch(`${GATEHOUSE_OIDC}/oidc/complete`, {
+  const res = await fetch(`${SECUIRD_OIDC}/oidc/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ oidc_session_id: oidcSessionId, token }),
@@ -64,13 +64,13 @@ export default function LoginPage() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
 
   // OIDC bridge: if oidc_session_id is in the URL, we're acting as the
-  // login UI for an OIDC authorization flow (e.g. SecuIRD → Gatehouse).
+  // login UI for an OIDC authorization flow (e.g. SecuIRD → Secuird).
   // After successful login, call /oidc/complete and redirect to the client app.
   const oidcSessionId = searchParams.get('oidc_session_id');
   const oidcError = searchParams.get('error');
 
   // CLI bridge: if cli_token or cli_redirect is present the login was triggered
-  // by the Gatehouse CLI tool.  After successful auth the token is delivered
+  // by the Secuird CLI tool.  After successful auth the token is delivered
   // directly to the CLI's local callback server.
   const cliToken = searchParams.get('cli_token');
   const cliRedirectParam = searchParams.get('cli_redirect');
@@ -81,7 +81,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!cliToken || cliFetchedRef.current) return;
     cliFetchedRef.current = true;
-    fetch(`${GATEHOUSE_API}/cli/redirect-url?token=${encodeURIComponent(cliToken)}`)
+    fetch(`${SECUIRD_API}/cli/redirect-url?token=${encodeURIComponent(cliToken)}`)
       .then((r) => r.json())
       .then((body) => {
         if (body?.data?.redirect_url) {
@@ -165,7 +165,7 @@ export default function LoginPage() {
         // MFA enrollment required - will be handled by ProtectedLayout
         // Navigation happens in AuthContext (MFA path always navigates)
       } else if (oidcSessionId) {
-        // OIDC bridge: send token back to the Gatehouse backend to complete the flow
+        // OIDC bridge: send token back to the Secuird backend to complete the flow
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
       } else if (cliRedirectUrl) {
@@ -176,7 +176,7 @@ export default function LoginPage() {
       // Normal login: navigation already handled by AuthContext (skipNavigate=false)
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] Login failed:", error);
+        console.error("[Secuird] Login failed:", error);
       }
 
       const message = error instanceof ApiError
@@ -246,7 +246,7 @@ export default function LoginPage() {
       }
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] MFA verification failed:", error);
+        console.error("[Secuird] MFA verification failed:", error);
       }
 
       const message = error instanceof ApiError
@@ -294,7 +294,7 @@ export default function LoginPage() {
       // Normal login: navigation already handled by AuthContext (skipNavigate=false)
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] TOTP verification failed:", error);
+        console.error("[Secuird] TOTP verification failed:", error);
       }
 
       const message = error instanceof ApiError 
@@ -363,7 +363,7 @@ export default function LoginPage() {
       });
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] Passkey login failed:", error);
+        console.error("[Secuird] Passkey login failed:", error);
       }
 
       let message = "Failed to sign in with passkey";
@@ -438,7 +438,7 @@ export default function LoginPage() {
       }
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] WebAuthn verification failed:", error);
+        console.error("[Secuird] WebAuthn verification failed:", error);
       }
 
       let message = "Failed to verify passkey";
@@ -518,7 +518,7 @@ export default function LoginPage() {
 
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error("[Gatehouse] OAuth login failed:", error);
+        console.error("[Secuird] OAuth login failed:", error);
       }
 
       let message = `Failed to initiate ${provider} sign in`;
@@ -939,7 +939,7 @@ export default function LoginPage() {
         </h1>
         <p className="text-muted-foreground mt-2">
           {cliRedirectUrl
-            ? "Sign in to grant the Gatehouse CLI access to your account"
+            ? "Sign in to grant the Secuird CLI access to your account"
             : oidcSessionId
             ? "An application is requesting access to your account"
             : "Sign in to your account to continue"}

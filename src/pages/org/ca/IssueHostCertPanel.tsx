@@ -176,7 +176,7 @@ ssh-keygen -L -f /etc/ssh/ssh_host_ed25519_key-cert.pub`
                 </p>
                 <p>
                   <strong>Step 2 (here):</strong> For each server, collect its host public key,
-                  paste it below, and Gatehouse will sign it. Install the resulting certificate
+                  paste it below, and Secuird will sign it. Install the resulting certificate
                   as <code className="font-mono">HostCertificate</code> in{" "}
                   <code className="font-mono">sshd_config</code>.
                 </p>

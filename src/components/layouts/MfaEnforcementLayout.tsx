@@ -97,7 +97,7 @@ export default function MfaEnforcementLayout() {
       <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <Shield className="w-5 h-5 text-primary" />
-          <span className="font-semibold text-foreground">Gatehouse</span>
+          <span className="font-semibold text-foreground">Secuird</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">

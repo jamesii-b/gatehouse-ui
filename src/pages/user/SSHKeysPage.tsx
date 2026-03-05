@@ -658,7 +658,7 @@ export default function SSHKeysPage() {
                 CA Public Key
               </CardTitle>
               <CardDescription>
-                Add this key to <code>TrustedUserCAKeys</code> on your servers so they accept certificates issued by Gatehouse.
+                Add this key to <code>TrustedUserCAKeys</code> on your servers so they accept certificates issued by Secuird.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -821,7 +821,7 @@ TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys`}
 {`echo '<challenge_text>' > /tmp/challenge.txt
 ssh-keygen -Y sign \\
   -f ~/.ssh/id_ed25519 \\
-  -n gatehouse \\
+  -n secuird \\
   /tmp/challenge.txt
 cat /tmp/challenge.txt.sig | base64 -w0`}
                 </pre>

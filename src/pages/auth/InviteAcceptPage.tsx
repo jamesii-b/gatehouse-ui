@@ -61,7 +61,7 @@ export default function InviteAcceptPage() {
       const result = await api.invites.accept(token, name || undefined, inviteData?.user_exists ? undefined : password);
       if (result.token) {
         // Store the token manually since we're not using the normal login flow
-        localStorage.setItem("gatehouse_token", result.token);
+        localStorage.setItem("secuird_token", result.token);
       }
       navigate("/profile");
     } catch (err: unknown) {
@@ -127,7 +127,7 @@ export default function InviteAcceptPage() {
             <CheckCircle className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
             <div className="text-sm">
               <p className="font-medium text-foreground">Account found</p>
-              <p className="text-muted-foreground">You already have a Gatehouse account. Click below to join the organization.</p>
+              <p className="text-muted-foreground">You already have a Secuird account. Click below to join the organization.</p>
             </div>
           </div>
         ) : (

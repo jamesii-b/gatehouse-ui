@@ -1,4 +1,4 @@
-// Gatehouse Configuration
+// Secuird Configuration
 // Environment-specific settings for the application
 
 export const config = {
@@ -9,7 +9,7 @@ export const config = {
 
   // App metadata
   app: {
-    name: "Gatehouse",
+    name: "Secuird",
     description: "Identity & Access Platform",
   },
 

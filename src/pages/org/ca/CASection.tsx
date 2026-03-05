@@ -127,7 +127,7 @@ export function CASection({
                 <p>
                   Certificates are being signed by a CA key loaded from the server
                   configuration, not managed through this UI. Generate a managed key below to
-                  take full control of certificate issuance from Gatehouse.
+                  take full control of certificate issuance from Secuird.
                 </p>
               </div>
               <Button

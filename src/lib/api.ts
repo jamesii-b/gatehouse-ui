@@ -1,4 +1,4 @@
-// API Client for Gatehouse Backend
+// API Client for Secuird Backend
 // Uses Bearer token authentication
 
 import { config } from '@/config';
@@ -259,8 +259,8 @@ class ApiError extends Error {
 }
 
 // Token storage keys
-const TOKEN_KEY = 'gatehouse_token';
-const TOKEN_EXPIRY_KEY = 'gatehouse_token_expiry';
+const TOKEN_KEY = 'secuird_token';
+const TOKEN_EXPIRY_KEY = 'secuird_token_expiry';
 
 // Token management
 export const tokenManager = {
