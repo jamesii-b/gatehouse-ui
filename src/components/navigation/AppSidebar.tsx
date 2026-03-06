@@ -60,14 +60,15 @@ const adminNavItems = [
   { title: "Certificate Auth.", url: "/org/cas", icon: ShieldCheck },
   { title: "OIDC Clients",     url: "/org/clients", icon: Key },
   { title: "Org Audit Log",    url: "/org/audit", icon: FileText },
-  { title: "System Logs",      url: "/admin/audit", icon: ScrollText },
 ];
+
+const systemLogNavItem = { title: "System Logs", url: "/admin/audit", icon: ScrollText };
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
-  const { isOrgAdmin, isOrgMember } = useAuth();
+  const { isOrgAdmin, isOrgMember, canViewSystemLogs } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
   const isOrgActive = orgAdminNavItems.some((item) => isActive(item.url)) || adminNavItems.some((item) => isActive(item.url));
@@ -174,7 +175,7 @@ export function AppSidebar() {
           )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {adminNavItems.map((item) => (
+              {[...adminNavItems, ...(canViewSystemLogs ? [systemLogNavItem] : [])].map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink

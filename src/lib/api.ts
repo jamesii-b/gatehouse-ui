@@ -33,6 +33,10 @@ export interface User {
   has_password?: boolean;
   totp_enabled?: boolean;
   linked_providers?: string[];
+  /** Session-derived group memberships (from OIDC claims or session device_info). */
+  groups?: string[];
+  /** Whether the current user is allowed to access the system-wide audit log. */
+  can_view_system_logs?: boolean;
 }
 
 export interface Organization {
@@ -938,7 +942,7 @@ export const api = {
 
     // Get organization audit logs
     getAuditLogs: (orgId: string, params?: Record<string, string>, requestConfig?: RequestConfig) =>
-      request<{ audit_logs: AuditLogEntry[]; count: number }>(
+      request<{ audit_logs: AuditLogEntry[]; count: number; page: number; per_page: number; pages: number }>(
         `/organizations/${orgId}/audit-logs${params ? '?' + new URLSearchParams(params).toString() : ''}`,
         {},
         true,

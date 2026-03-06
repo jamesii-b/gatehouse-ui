@@ -17,6 +17,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isOrgAdmin: boolean;
   isOrgMember: boolean;
+  /** True when the current user is allowed to view the system-wide audit log. */
+  canViewSystemLogs: boolean;
   mfaCompliance: MfaComplianceSummary | null;
   requiresMfaEnrollment: boolean;
   login: (email: string, password: string, rememberMe?: boolean, skipNavigate?: boolean) => Promise<LoginResult>;
@@ -265,7 +267,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     await checkOrgAdmin();
     if (!skipNavigate) {
-      navigate('/profile');
+      const orgsData = await api.users.organizations();
+      const hasOrg = orgsData.organizations && orgsData.organizations.length > 0;
+      
+      if (hasOrg) {
+        navigate('/profile');
+      } else {
+        navigate('/org-setup');
+      }
     }
   }, [navigate, checkOrgAdmin]);
 
@@ -291,6 +300,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isOrgAdmin,
         isOrgMember,
+        canViewSystemLogs: user?.can_view_system_logs ?? false,
         mfaCompliance,
         requiresMfaEnrollment,
         login,
