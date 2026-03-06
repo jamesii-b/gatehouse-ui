@@ -6,23 +6,21 @@ import {
   ChevronLeft,
   ChevronRight,
   LogIn,
-  LogOut,
   Key,
   UserPlus,
   Shield,
   Settings,
   AlertTriangle,
-  Fingerprint,
-  Smartphone,
   Terminal,
   Loader2,
   CheckCircle2,
   XCircle,
   Globe,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -31,25 +29,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, AuditLogEntry } from "@/lib/api";
+import { api, AuditLogEntry, ApiError } from "@/lib/api";
+import { formatDateTime } from "@/lib/date";
 
 // ─── category helpers ────────────────────────────────────────────────────────
 
-type Category = "auth" | "ssh" | "org" | "user" | "security" | "token" | "other";
+type Category = "auth" | "ssh" | "org" | "user" | "security" | "token" | "admin" | "other";
 
 const getCategory = (action: string): Category => {
   const a = action.toLowerCase();
-  if (a.startsWith("session") || a.includes("login") || a.includes("logout") || a.includes("external_auth"))
+  if (a.startsWith("session") || a === "user.login" || a === "user.logout" || a.startsWith("external_auth.login"))
     return "auth";
   if (a.startsWith("ssh"))
     return "ssh";
+  if (a.startsWith("admin."))
+    return "admin";
   if (a.startsWith("org") || a.includes("member") || a.includes("department") || a.includes("invite"))
     return "org";
   if (a.startsWith("user"))
     return "user";
   if (a.includes("mfa") || a.includes("totp") || a.includes("webauthn") || a.includes("passkey") || a.includes("password"))
     return "security";
-  if (a.includes("token") || a.includes("oidc") || a.includes("client"))
+  if (a.includes("token") || a.includes("oidc") || a.includes("client") || a.startsWith("external_auth"))
     return "token";
   return "other";
 };
@@ -61,6 +62,7 @@ const CATEGORY_META: Record<Category, { label: string; color: string }> = {
   user:     { label: "User",     color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   security: { label: "Security", color: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
   token:    { label: "Token",    color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" },
+  admin:    { label: "Admin",    color: "bg-red-500/10 text-red-600 dark:text-red-400" },
   other:    { label: "Other",    color: "bg-muted text-muted-foreground" },
 };
 
@@ -73,6 +75,7 @@ const getCategoryIcon = (category: Category) => {
     case "user":     return <UserPlus className={cls} />;
     case "security": return <Shield className={cls} />;
     case "token":    return <Key className={cls} />;
+    case "admin":    return <Lock className={cls} />;
     default:         return <Globe className={cls} />;
   }
 };
@@ -86,26 +89,42 @@ const getActionLabel = (action: string) =>
 // ─── component ───────────────────────────────────────────────────────────────
 
 const ACTION_FILTER_OPTIONS = [
-  { value: "all",                         label: "All actions" },
-  { value: "SESSION_CREATE",              label: "Login" },
-  { value: "SESSION_REVOKE",              label: "Logout" },
-  { value: "EXTERNAL_AUTH_LOGIN",         label: "OAuth Login" },
-  { value: "EXTERNAL_AUTH_LOGIN_FAILED",  label: "OAuth Failed" },
-  { value: "USER_REGISTER",              label: "Register" },
-  { value: "SSH_KEY_ADDED",              label: "SSH Key Added" },
-  { value: "SSH_KEY_VERIFIED",           label: "SSH Key Verified" },
-  { value: "SSH_CERT_ISSUED",            label: "SSH Cert Issued" },
-  { value: "SSH_CERT_REVOKED",           label: "SSH Cert Revoked" },
-  { value: "SSH_CERT_FAILED",            label: "SSH Cert Failed" },
-  { value: "ORG_CREATE",                 label: "Org Created" },
-  { value: "ORG_MEMBER_ADD",             label: "Member Added" },
-  { value: "ORG_MEMBER_ROLE_CHANGE",     label: "Role Changed" },
+  { value: "all",                              label: "All actions" },
+  { value: "session.create",                   label: "Login" },
+  { value: "session.revoke",                   label: "Logout" },
+  { value: "external_auth.login",              label: "OAuth Login" },
+  { value: "external_auth.login.failed",       label: "OAuth Failed" },
+  { value: "external_auth.link.completed",     label: "OAuth Account Linked" },
+  { value: "external_auth.unlink",             label: "OAuth Account Unlinked" },
+  { value: "user.register",                    label: "Register" },
+  { value: "ssh.key.added",                    label: "SSH Key Added" },
+  { value: "ssh.key.verified",                 label: "SSH Key Verified" },
+  { value: "ssh.key.deleted",                  label: "SSH Key Deleted" },
+  { value: "ssh.cert.issued",                  label: "SSH Cert Issued" },
+  { value: "ssh.cert.revoked",                 label: "SSH Cert Revoked" },
+  { value: "ssh.cert.failed",                  label: "SSH Cert Failed" },
+  { value: "org.create",                       label: "Org Created" },
+  { value: "org.member.add",                   label: "Member Added" },
+  { value: "org.member.remove",                label: "Member Removed" },
+  { value: "org.member.role_change",           label: "Role Changed" },
+  { value: "org.security_policy.update",       label: "Security Policy Updated" },
+  { value: "admin.mfa.remove",                 label: "MFA Removed (Admin)" },
+  { value: "admin.oauth.unlink",               label: "OAuth Unlinked (Admin)" },
+  { value: "admin.password.set",               label: "Password Set (Admin)" },
+  { value: "totp.enroll.completed",            label: "TOTP Enrolled" },
+  { value: "totp.disabled",                    label: "TOTP Disabled" },
+  { value: "webauthn.register.completed",      label: "Passkey Registered" },
+  { value: "webauthn.credential.deleted",      label: "Passkey Removed" },
+  { value: "user.password_change",             label: "Password Changed" },
+  { value: "user.password_reset",              label: "Password Reset" },
+  { value: "user.suspend",                     label: "User Suspended" },
 ];
 
 export default function SystemAuditPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [isAdminView, setIsAdminView] = useState(false);
 
   // filters
@@ -129,6 +148,7 @@ export default function SystemAuditPage() {
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setAccessDenied(false);
     try {
       const params: Record<string, string> = {
         page: String(page),
@@ -144,8 +164,12 @@ export default function SystemAuditPage() {
       setTotalPages(resp.pages ?? 1);
       setIsAdminView(resp.is_admin_view ?? false);
     } catch (err) {
-      console.error("Failed to fetch system audit logs:", err);
-      setError("Failed to load audit logs. Please try again.");
+      if (err instanceof ApiError && err.code === 403) {
+        setAccessDenied(true);
+      } else {
+        console.error("Failed to fetch system audit logs:", err);
+        setError("Failed to load audit logs. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -160,17 +184,7 @@ export default function SystemAuditPage() {
     setPage(1);
   }, [actionFilter, successFilter, debouncedSearch]);
 
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(d);
-  };
+  const formatDate = (dateString: string) => formatDateTime(dateString);
 
   const formatUserAgent = (ua: string | null) => {
     if (!ua) return null;
@@ -243,6 +257,14 @@ export default function SystemAuditPage() {
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               <span className="ml-2 text-muted-foreground">Loading…</span>
+            </div>
+          ) : accessDenied ? (
+            <div className="py-16 text-center text-muted-foreground">
+              <Lock className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
+              <p className="font-medium text-base">Access Restricted</p>
+              <p className="text-sm mt-1 max-w-sm mx-auto">
+                You don't have permission to view system-wide audit logs. Contact your administrator to request access.
+              </p>
             </div>
           ) : error ? (
             <div className="py-12 text-center text-destructive">

@@ -230,8 +230,14 @@ export default function LoginPage() {
           finishCliFlow(response.token);
         } else {
           await refreshUser();
-          await checkOrgAdmin();
-          navigate('/profile');
+          const orgsData = await api.users.organizations();
+          const hasOrg = orgsData.organizations && orgsData.organizations.length > 0;
+          
+          if (hasOrg) {
+            navigate('/profile');
+          } else {
+            navigate('/org-setup');
+          }
         }
       } else {
         // Fallback to regular TOTP verification
@@ -357,7 +363,10 @@ export default function LoginPage() {
         const token = tokenManager.getToken();
         if (token) finishCliFlow(token);
       } else {
-        navigate('/profile');
+        // Verify org membership before navigating to prevent showing org-setup briefly
+        const orgsData = await api.users.organizations();
+        const hasOrg = orgsData.organizations && orgsData.organizations.length > 0;
+        navigate(hasOrg ? '/profile' : '/org-setup');
       }
       
       toast({
@@ -434,7 +443,10 @@ export default function LoginPage() {
       } else {
         await refreshUser();
         await checkOrgAdmin();
-        navigate('/profile');
+        // Verify org membership before navigating to prevent showing org-setup briefly
+        const orgsData = await api.users.organizations();
+        const hasOrg = orgsData.organizations && orgsData.organizations.length > 0;
+        navigate(hasOrg ? '/profile' : '/org-setup');
         toast({
           title: "Welcome back",
           description: `Signed in as ${result.user.email}`,
