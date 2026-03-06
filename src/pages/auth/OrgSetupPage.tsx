@@ -8,6 +8,7 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Building2, Plus, ArrowRight, Loader2, Mail, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ interface LocationState {
 export default function OrgSetupPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { refreshUser, checkOrgAdmin, isOrgMember, isLoading } = useAuth();
 
   // If the user already belongs to an org (e.g. they bookmarked /org-setup),
@@ -100,6 +102,7 @@ export default function OrgSetupPage() {
   const done = async () => {
     await refreshUser();
     await checkOrgAdmin();
+    queryClient.invalidateQueries({ queryKey: ['organizations'] });
     navigate("/profile", { replace: true });
   };
 

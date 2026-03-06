@@ -49,7 +49,7 @@ async function completeOidcFlow(oidcSessionId: string, token: string): Promise<s
 }
 
 export default function LoginPage() {
-  const { login, verifyTotp, refreshUser, user, isLoading: authLoading } = useAuth();
+  const { login, verifyTotp, refreshUser, user, isLoading: authLoading, checkOrgAdmin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -230,6 +230,7 @@ export default function LoginPage() {
           finishCliFlow(response.token);
         } else {
           await refreshUser();
+          await checkOrgAdmin();
           navigate('/profile');
         }
       } else {
@@ -347,6 +348,8 @@ export default function LoginPage() {
 
       // Token is stored by completeLogin, refresh user and navigate
       await refreshUser();
+      await checkOrgAdmin();
+      
       if (oidcSessionId) {
         const token = tokenManager.getToken();
         if (token) await finishOidcFlow(token);
@@ -430,6 +433,7 @@ export default function LoginPage() {
         if (token) finishCliFlow(token);
       } else {
         await refreshUser();
+        await checkOrgAdmin();
         navigate('/profile');
         toast({
           title: "Welcome back",
