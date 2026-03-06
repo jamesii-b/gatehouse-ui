@@ -61,7 +61,8 @@ import { useAuth } from "@/contexts/AuthContext";
 
 function formatDate(d: string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const raw = !(d.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(d)) ? d + "Z" : d;
+  return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(raw));
 }
 
 function capitalize(s: string) {

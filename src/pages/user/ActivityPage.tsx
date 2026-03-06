@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, AuditLogEntry } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { formatDateTime } from "@/lib/date";
 
 // Map audit log action strings to display info
 const getEventDisplay = (action: string) => {
@@ -56,15 +57,7 @@ export default function ActivityPage() {
 
   useEffect(() => { loadEvents(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
-  };
+  const formatDate = (dateString: string) => formatDateTime(dateString, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
   const filteredEvents = events.filter((e) => {
     if (filter === "all") return true;

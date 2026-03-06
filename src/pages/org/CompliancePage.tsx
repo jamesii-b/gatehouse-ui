@@ -10,6 +10,7 @@ import { api, OrgComplianceMember, create403Handler } from "@/lib/api";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useOrg } from "@/contexts/OrgContext";
+import { formatDate } from "@/lib/date";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   compliant: {
@@ -231,7 +232,7 @@ export default function CompliancePage() {
                       {member.deadline_at && member.status !== 'compliant' && member.status !== 'not_applicable' && (
                         <div className="text-sm text-muted-foreground">
                           <span className="hidden md:inline">Deadline: </span>
-                          {new Date(member.deadline_at).toLocaleDateString()}
+                          {formatDate(member.deadline_at)}
                         </div>
                       )}
                       
