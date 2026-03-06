@@ -246,13 +246,13 @@ export default function SecurityPage() {
 
   const formatLastUsed = (date: string | null) => {
     if (!date) return "Never";
-    const d = new Date(date);
+    const d = new Date(date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z");
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Yesterday";
     if (diffDays < 7) return `${diffDays} days ago`;
-    return d.toLocaleDateString();
+    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(d);
   };
 
   return (

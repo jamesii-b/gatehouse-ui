@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AddPasskeyWizard } from '@/components/security/AddPasskeyWizard';
 import { TotpEnrollmentWizard } from '@/components/security/TotpEnrollmentWizard';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/date';
 
 export default function MfaEnforcementLayout() {
   const navigate = useNavigate();
@@ -124,7 +125,7 @@ export default function MfaEnforcementLayout() {
             {mfaCompliance?.deadline_at && (
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-center">
                 <p className="text-sm font-medium text-destructive">
-                  Deadline: {new Date(mfaCompliance.deadline_at).toLocaleDateString()}
+                  Deadline: {formatDate(mfaCompliance.deadline_at)}
                 </p>
               </div>
             )}

@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { api, SSHKey, SSHCertificate, ApiError, PrincipalOption, MyPrincipalsOrg, DeptCertPolicy } from "@/lib/api";
+import { formatDate as _formatDate } from "@/lib/date";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -55,11 +56,7 @@ import { api, SSHKey, SSHCertificate, ApiError, PrincipalOption, MyPrincipalsOrg
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return _formatDate(dateStr);
 }
 
 function CopyButton({ text }: { text: string }) {
