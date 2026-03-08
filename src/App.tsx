@@ -47,6 +47,7 @@ import OIDCClientsPage from "@/pages/org/OIDCClientsPage";
 import CAsPage from "@/pages/org/CAsPage";
 import DepartmentsPage from "@/pages/org/DepartmentsPage";
 import PrincipalsPage from "@/pages/org/PrincipalsPage";
+import ApiKeysPage from "@/pages/org/ApiKeysPage";
 import MyMembershipsPage from "@/pages/org/MyMembershipsPage";
 import NetworksPage from "@/pages/org/NetworksPage";
 import DevicesPage from "@/pages/org/DevicesPage";
@@ -184,6 +185,7 @@ function AppRoutes() {
           <Route path="/org/members" element={<RequireAdmin><MembersPage /></RequireAdmin>} />
           <Route path="/org/departments" element={<RequireAdmin><DepartmentsPage /></RequireAdmin>} />
           <Route path="/org/principals" element={<RequireAdmin><PrincipalsPage /></RequireAdmin>} />
+          <Route path="/org/api-keys" element={<RequireAdmin><ApiKeysPage /></RequireAdmin>} />
           <Route path="/org/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
           <Route path="/org/policies/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/org/audit" element={<RequireAdmin><OrgAuditPage /></RequireAdmin>} />

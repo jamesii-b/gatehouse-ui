@@ -48,10 +48,10 @@ export function CADetailCard({ ca, onEdit, onRotate, onDelete }: CADetailCardPro
 
   // ── User CA: server trusts this public key so it accepts user certs ──────
   const userCaServerSnippet = `# On each SSH server — trust Secuird-issued user certificates:
-echo '${ca.public_key.trim()}' >> /etc/ssh/trusted_user_ca_keys
+echo '${ca.public_key.trim()}' >> /etc/ssh/trusted_user_ca
 
 # /etc/ssh/sshd_config  (add once, then reload sshd):
-TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys
+TrustedUserCAKeys /etc/ssh/trusted_user_ca
 AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
 # Create /etc/ssh/auth_principals/<unix-user> containing one principal per line.`;
 

@@ -390,7 +390,7 @@ export default function DepartmentsPage() {
   const [selectedPrincipalId, setSelectedPrincipalId] = useState("");
   const [isLinking, setIsLinking] = useState(false);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
-  const [formData, setFormData] = useState({ name: "", description: "" });
+  const [formData, setFormData] = useState({ name: "", description: "", can_sudo: false });
   const [expandedPolicies, setExpandedPolicies] = useState<Set<string>>(new Set());
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
 
@@ -502,12 +502,13 @@ export default function DepartmentsPage() {
   const handleCreateDepartment = async () => {
     if (!orgId || !formData.name.trim()) return;
     try {
-      await api.organizations.createDepartment(
+      const dept = await api.organizations.createDepartment(
         orgId,
         formData.name,
-        formData.description || undefined
+        formData.description || undefined,
+        formData.can_sudo
       );
-      setFormData({ name: "", description: "" });
+      setFormData({ name: "", description: "", can_sudo: false });
       setIsCreateDialogOpen(false);
       await fetchDepartments(orgId);
     } catch (err) {
@@ -522,8 +523,9 @@ export default function DepartmentsPage() {
       await api.organizations.updateDepartment(orgId, editingDept.id, {
         name: formData.name,
         description: formData.description || undefined,
+        can_sudo: formData.can_sudo,
       });
-      setFormData({ name: "", description: "" });
+      setFormData({ name: "", description: "", can_sudo: false });
       setEditingDept(null);
       setIsEditDialogOpen(false);
       await fetchDepartments(orgId);
@@ -546,7 +548,7 @@ export default function DepartmentsPage() {
 
   const openEditDialog = (dept: Department) => {
     setEditingDept(dept);
-    setFormData({ name: dept.name, description: dept.description || "" });
+    setFormData({ name: dept.name, description: dept.description || "", can_sudo: dept.can_sudo || false });
     setIsEditDialogOpen(true);
   };
 
@@ -572,7 +574,7 @@ export default function DepartmentsPage() {
             Manage departments and organize team members
           </p>
         </div>
-        <Button onClick={() => { setFormData({ name: "", description: "" }); setIsCreateDialogOpen(true); }}>
+        <Button onClick={() => { setFormData({ name: "", description: "", can_sudo: false }); setIsCreateDialogOpen(true); }}>
           <Plus className="w-4 h-4 mr-2" />
           Create Department
         </Button>
@@ -615,10 +617,15 @@ export default function DepartmentsPage() {
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-foreground">
                           {dept.name}
                         </p>
+                        {dept.can_sudo && (
+                          <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">
+                            Sudo enabled
+                          </Badge>
+                        )}
                       </div>
                       {dept.description && (
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -751,6 +758,18 @@ export default function DepartmentsPage() {
                 rows={3}
               />
             </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+              <div>
+                <Label className="text-base font-medium cursor-pointer">Allow sudo access</Label>
+                <p className="text-xs text-muted-foreground mt-1">Members of this department can use sudo</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.can_sudo}
+                onChange={(e) => setFormData({ ...formData, can_sudo: e.target.checked })}
+                className="w-4 h-4 cursor-pointer"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -790,6 +809,18 @@ export default function DepartmentsPage() {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+              <div>
+                <Label className="text-base font-medium cursor-pointer">Allow sudo access</Label>
+                <p className="text-xs text-muted-foreground mt-1">Members of this department can use sudo</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={formData.can_sudo}
+                onChange={(e) => setFormData({ ...formData, can_sudo: e.target.checked })}
+                className="w-4 h-4 cursor-pointer"
               />
             </div>
           </div>

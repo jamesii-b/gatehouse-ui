@@ -248,6 +248,38 @@ export interface LinkAccountResponse {
   linked_account: LinkedAccount;
 }
 
+export interface OrganizationApiKey {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  key_hash?: string; // Usually excluded from responses for security
+  last_used_at: string | null;
+  is_revoked: boolean;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CertificateAuditLog {
+  id: string;
+  action: string;
+  certificate_serial: string;
+  key_id: string;
+  principals: string[];
+  user_id: string;
+  user_email: string | null;
+  issued_at: string;
+  valid_after: string;
+  valid_before: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  message: string | null;
+  success: boolean;
+  created_at: string;
+}
+
 class ApiError extends Error {
   code: number;
   type: string;
@@ -954,14 +986,14 @@ export const api = {
       request<{ departments: Department[]; count: number }>(`/organizations/${orgId}/departments`, {}, true, requestConfig),
 
     // Create department
-    createDepartment: (orgId: string, name: string, description?: string, requestConfig?: RequestConfig) =>
+    createDepartment: (orgId: string, name: string, description?: string, canSudo?: boolean, requestConfig?: RequestConfig) =>
       request<{ department: Department }>(`/organizations/${orgId}/departments`, {
         method: 'POST',
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({ name, description, can_sudo: canSudo }),
       }, true, requestConfig),
 
     // Update department
-    updateDepartment: (orgId: string, deptId: string, data: { name?: string; description?: string }, requestConfig?: RequestConfig) =>
+    updateDepartment: (orgId: string, deptId: string, data: { name?: string; description?: string; can_sudo?: boolean }, requestConfig?: RequestConfig) =>
       request<{ department: Department }>(`/organizations/${orgId}/departments/${deptId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -1130,6 +1162,39 @@ export const api = {
       request<{ ca_id: string }>(`/organizations/${orgId}/cas/${caId}`, {
         method: 'DELETE',
       }, true, requestConfig),
+
+    // Get API keys for organization
+    getApiKeys: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ api_keys: OrganizationApiKey[]; count: number }>(`/organizations/${orgId}/api-keys`, {}, true, requestConfig),
+
+    // Create new API key
+    createApiKey: (orgId: string, name: string, description?: string, requestConfig?: RequestConfig) =>
+      request<{ api_key: OrganizationApiKey & { key?: string } }>(`/organizations/${orgId}/api-keys`, {
+        method: 'POST',
+        body: JSON.stringify({ name, description }),
+      }, true, requestConfig),
+
+    // Update API key
+    updateApiKey: (orgId: string, keyId: string, data: { name?: string; description?: string }, requestConfig?: RequestConfig) =>
+      request<{ api_key: OrganizationApiKey }>(`/organizations/${orgId}/api-keys/${keyId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }, true, requestConfig),
+
+    // Delete API key
+    deleteApiKey: (orgId: string, keyId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(`/organizations/${orgId}/api-keys/${keyId}`, {
+        method: 'DELETE',
+      }, true, requestConfig),
+
+    // Get certificate audit logs for organization
+    getCertificateAuditLogs: (orgId: string, params?: Record<string, string>, requestConfig?: RequestConfig) =>
+      request<{ audit_logs: CertificateAuditLog[]; count: number; page: number; per_page: number; pages: number }>(
+        `/organizations/${orgId}/certificates/audit${params ? '?' + new URLSearchParams(params).toString() : ''}`,
+        {},
+        true,
+        requestConfig
+      ),
   },
 
   invites: {
@@ -1557,6 +1622,7 @@ export interface Department {
   organization_id: string;
   name: string;
   description: string | null;
+  can_sudo: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
