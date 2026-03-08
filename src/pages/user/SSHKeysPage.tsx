@@ -689,9 +689,9 @@ export default function SSHKeysPage() {
                     </p>
                     <pre className="text-xs font-mono whitespace-pre-wrap break-all">
 {`# On each SSH server:
-echo '<ca_public_key>' >> /etc/ssh/trusted_user_ca_keys
+echo '<ca_public_key>' >> /etc/ssh/trusted_user_ca
 # In /etc/ssh/sshd_config:
-TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys`}
+TrustedUserCAKeys /etc/ssh/trusted_user_ca`}
                     </pre>
                   </div>
                 </div>

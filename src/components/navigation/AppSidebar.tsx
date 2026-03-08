@@ -53,6 +53,7 @@ const orgAdminNavItems = [
   { title: "Members", url: "/org/members", icon: Users },
   { title: "Departments", url: "/org/departments", icon: Layers },
   { title: "Principals", url: "/org/principals", icon: GitBranch },
+  { title: "API Keys", url: "/org/api-keys", icon: Key },
   { title: "Policies", url: "/org/policies", icon: Settings },
 ];
 
