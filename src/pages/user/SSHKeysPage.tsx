@@ -797,7 +797,10 @@ TrustedUserCAKeys /etc/ssh/trusted_user_ca`}
                 <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">{verifyError}</div>
               )}
               <div className="space-y-2">
-                <Label>Step 1 — Save this challenge text to a file</Label>
+                <Label>Step 1 — Save the challenge text to a file</Label>
+                <p className="text-xs text-muted-foreground">
+                  Copy the <strong>entire</strong> text below (not just the hex) and save it to a file.
+                </p>
                 <div className="relative">
                   <Textarea
                     readOnly
@@ -810,18 +813,21 @@ TrustedUserCAKeys /etc/ssh/trusted_user_ca`}
                 </div>
               </div>
 
-              <div className="rounded-lg bg-muted p-3 space-y-1">
-                <p className="text-xs font-semibold flex items-center gap-1">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
                   <Terminal className="w-3 h-3" /> Step 2 — Sign with ssh-keygen
-                </p>
-                <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-{`echo '<challenge_text>' > /tmp/challenge.txt
-ssh-keygen -Y sign \\
-  -f ~/.ssh/id_ed25519 \\
-  -n secuird \\
-  /tmp/challenge.txt
-cat /tmp/challenge.txt.sig | base64 -w0`}
-                </pre>
+                </Label>
+                <div className="relative">
+                  <Textarea
+                    readOnly
+                    value={`echo '${challengeText}' > /tmp/challenge.txt\nssh-keygen -Y sign \\\n  -f ~/.ssh/id_ed25519 \\\n  -n file \\\n  /tmp/challenge.txt\ncat /tmp/challenge.txt.sig | base64 -w0`}
+                    className="font-mono text-xs pr-10"
+                    rows={6}
+                  />
+                  <div className="absolute top-2 right-2">
+                    <CopyButton text={`echo '${challengeText}' > /tmp/challenge.txt\nssh-keygen -Y sign \\\n  -f ~/.ssh/id_ed25519 \\\n  -n file \\\n  /tmp/challenge.txt\ncat /tmp/challenge.txt.sig | base64 -w0`} />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
