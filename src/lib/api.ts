@@ -1258,6 +1258,264 @@ export const api = {
         method: 'DELETE',
       }, true, requestConfig),
   },
+
+  zerotier: {
+    // ── Portal Networks ─────────────────────────────────────────────────────────
+    listNetworks: (orgId: string, includeInactive = false, requestConfig?: RequestConfig) =>
+      request<{ networks: PortalNetwork[]; count: number }>(
+        `/organizations/${orgId}/networks${includeInactive ? "?include_inactive=true" : ""}`,
+        {}, true, requestConfig,
+      ),
+
+    createNetwork: (orgId: string, data: {
+      name: string;
+      zerotier_network_id: string;
+      description?: string;
+      environment?: string;
+      request_mode?: string;
+      default_activation_lifetime_minutes?: number;
+      max_activation_lifetime_minutes?: number;
+    }, requestConfig?: RequestConfig) =>
+      request<{ network: PortalNetwork }>(
+        `/organizations/${orgId}/networks`,
+        { method: "POST", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    getNetwork: (orgId: string, networkId: string, requestConfig?: RequestConfig) =>
+      request<{ network: PortalNetwork }>(
+        `/organizations/${orgId}/networks/${networkId}`,
+        {}, true, requestConfig,
+      ),
+
+    updateNetwork: (orgId: string, networkId: string, data: Record<string, unknown>, requestConfig?: RequestConfig) =>
+      request<{ network: PortalNetwork }>(
+        `/organizations/${orgId}/networks/${networkId}`,
+        { method: "PATCH", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    deleteNetwork: (orgId: string, networkId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(
+        `/organizations/${orgId}/networks/${networkId}`,
+        { method: "DELETE" }, true, requestConfig,
+      ),
+
+    getNetworkMembers: (orgId: string, networkId: string, requestConfig?: RequestConfig) =>
+      request<{ memberships: DeviceNetworkMembership[]; count: number }>(
+        `/organizations/${orgId}/networks/${networkId}/members`,
+        {}, true, requestConfig,
+      ),
+
+    getNetworkPendingRequests: (orgId: string, networkId: string, requestConfig?: RequestConfig) =>
+      request<{ requests: UserNetworkApproval[]; count: number }>(
+        `/organizations/${orgId}/networks/${networkId}/requests`,
+        {}, true, requestConfig,
+      ),
+
+    // ── Devices ───────────────────────────────────────────────────────────────
+    listDevices: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ devices: Device[]; count: number }>(
+        `/organizations/${orgId}/devices`, {}, true, requestConfig,
+      ),
+
+    registerDevice: (orgId: string, data: {
+      node_id: string;
+      nickname?: string;
+      hostname?: string;
+      asset_tag?: string;
+      serial_number?: string;
+    }, requestConfig?: RequestConfig) =>
+      request<{ device: Device; memberships_created: number }>(
+        `/organizations/${orgId}/devices`,
+        { method: "POST", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    getDevice: (orgId: string, deviceId: string, requestConfig?: RequestConfig) =>
+      request<{ device: Device }>(
+        `/organizations/${orgId}/devices/${deviceId}`,
+        {}, true, requestConfig,
+      ),
+
+    updateDevice: (orgId: string, deviceId: string, data: {
+      nickname?: string;
+      hostname?: string;
+      asset_tag?: string;
+      serial_number?: string;
+    }, requestConfig?: RequestConfig) =>
+      request<{ device: Device }>(
+        `/organizations/${orgId}/devices/${deviceId}`,
+        { method: "PATCH", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    removeDevice: (orgId: string, deviceId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(
+        `/organizations/${orgId}/devices/${deviceId}`,
+        { method: "DELETE" }, true, requestConfig,
+      ),
+
+    // ── Approvals ─────────────────────────────────────────────────────────────
+    requestAccess: (orgId: string, data: {
+      portal_network_id: string;
+      device_id: string;
+      justification?: string;
+    }, requestConfig?: RequestConfig) =>
+      request<{ approval: UserNetworkApproval }>(
+        `/organizations/${orgId}/approvals`,
+        { method: "POST", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    listMyApprovals: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ approvals: UserNetworkApproval[]; count: number }>(
+        `/organizations/${orgId}/approvals`, {}, true, requestConfig,
+      ),
+
+    listPendingApprovals: (orgId: string, networkId?: string, requestConfig?: RequestConfig) =>
+      request<{ approvals: UserNetworkApproval[]; count: number }>(
+        `/organizations/${orgId}/approvals/pending${networkId ? `?network_id=${networkId}` : ""}`,
+        {}, true, requestConfig,
+      ),
+
+    approveRequest: (orgId: string, approvalId: string, requestConfig?: RequestConfig) =>
+      request<{ approval: UserNetworkApproval }>(
+        `/organizations/${orgId}/approvals/${approvalId}/approve`,
+        { method: "POST" }, true, requestConfig,
+      ),
+
+    rejectRequest: (orgId: string, approvalId: string, requestConfig?: RequestConfig) =>
+      request<{ approval: UserNetworkApproval }>(
+        `/organizations/${orgId}/approvals/${approvalId}/reject`,
+        { method: "POST" }, true, requestConfig,
+      ),
+
+    revokeApproval: (orgId: string, approvalId: string, requestConfig?: RequestConfig) =>
+      request<{ approval: UserNetworkApproval }>(
+        `/organizations/${orgId}/approvals/${approvalId}/revoke`,
+        { method: "POST" }, true, requestConfig,
+      ),
+
+    assignAccess: (orgId: string, data: {
+      target_user_id: string;
+      portal_network_id: string;
+      justification?: string;
+    }, requestConfig?: RequestConfig) =>
+      request<{ approval: UserNetworkApproval }>(
+        `/organizations/${orgId}/approvals/assign`,
+        { method: "POST", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    // ── Memberships ────────────────────────────────────────────────────────────
+    listMemberships: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ memberships: DeviceNetworkMembership[]; count: number }>(
+        `/organizations/${orgId}/memberships`, {}, true, requestConfig,
+      ),
+
+    activateMembership: (orgId: string, membershipId: string, lifetimeMinutes?: number, requestConfig?: RequestConfig) =>
+      request<{ session: ActivationSession; membership: DeviceNetworkMembership }>(
+        `/organizations/${orgId}/memberships/${membershipId}/activate`,
+        { method: "POST", body: JSON.stringify({ lifetime_minutes: lifetimeMinutes }) },
+        true, requestConfig,
+      ),
+
+    deactivateMembership: (orgId: string, membershipId: string, requestConfig?: RequestConfig) =>
+      request<{ membership: DeviceNetworkMembership }>(
+        `/organizations/${orgId}/memberships/${membershipId}/deactivate`,
+        { method: "POST" }, true, requestConfig,
+      ),
+
+    activateAllMemberships: (orgId: string, lifetimeMinutes?: number, requestConfig?: RequestConfig) =>
+      request<{ sessions: ActivationSession[]; count: number }>(
+        `/organizations/${orgId}/memberships/activate-all`,
+        { method: "POST", body: JSON.stringify({ lifetime_minutes: lifetimeMinutes }) },
+        true, requestConfig,
+      ),
+
+    joinNetworkForDevice: (orgId: string, deviceId: string, networkId: string, requestConfig?: RequestConfig) =>
+      request<{ membership: DeviceNetworkMembership }>(
+        `/organizations/${orgId}/devices/${deviceId}/join-network/${networkId}`,
+        { method: "POST" },
+        true, requestConfig,
+      ),
+
+    deleteMembership: (orgId: string, membershipId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(
+        `/organizations/${orgId}/memberships/${membershipId}`,
+        { method: "DELETE" },
+        true, requestConfig,
+      ),
+
+    // ── Admin ─────────────────────────────────────────────────────────────────
+    adminListAllMemberships: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ memberships: EnrichedMembership[]; count: number }>(
+        `/organizations/${orgId}/admin/memberships`,
+        {},
+        true,
+        requestConfig,
+      ),
+
+    adminDeleteMembership: (orgId: string, membershipId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(
+        `/organizations/${orgId}/admin/memberships/${membershipId}`,
+        { method: "DELETE" },
+        true, requestConfig,
+      ),
+
+    // ── Sessions ──────────────────────────────────────────────────────────────
+    listSessions: (orgId: string, requestConfig?: RequestConfig) =>
+      request<{ sessions: ActivationSession[]; count: number }>(
+        `/organizations/${orgId}/sessions`, {}, true, requestConfig,
+      ),
+
+    endSession: (orgId: string, sessionId: string, requestConfig?: RequestConfig) =>
+      request<{ message: string }>(
+        `/organizations/${orgId}/sessions/${sessionId}`,
+        { method: "DELETE" }, true, requestConfig,
+      ),
+
+    // ── Kill Switch ───────────────────────────────────────────────────────────
+    triggerKillSwitch: (orgId: string, data: {
+      target_user_id: string;
+      scope?: string;
+      reason?: string;
+      network_ids?: string[];
+    }, requestConfig?: RequestConfig) =>
+      request<{ event: KillSwitchEvent }>(
+        `/organizations/${orgId}/kill-switch`,
+        { method: "POST", body: JSON.stringify(data) },
+        true, requestConfig,
+      ),
+
+    // ── ZeroTier Controller (admin) ──────────────────────────────────────────
+    getZtStatus: (requestConfig?: RequestConfig) =>
+      request<{ status: Record<string, unknown> }>(
+        "/admin/zerotier/status", {}, true, requestConfig,
+      ),
+
+    listZtNetworks: (requestConfig?: RequestConfig) =>
+      request<{ networks: ZeroTierNetwork[]; count: number }>(
+        "/admin/zerotier/networks", {}, true, requestConfig,
+      ),
+
+    getZtNetwork: (networkId: string, requestConfig?: RequestConfig) =>
+      request<{ network: ZeroTierNetwork }>(
+        `/admin/zerotier/networks/${networkId}`, {}, true, requestConfig,
+      ),
+
+    listZtMembers: (networkId: string, requestConfig?: RequestConfig) =>
+      request<{ members: ZeroTierMember[]; count: number }>(
+        `/admin/zerotier/networks/${networkId}/members`, {}, true, requestConfig,
+      ),
+
+    triggerReconciliation: (requestConfig?: RequestConfig) =>
+      request<{ networks_processed: number; errors: number }>(
+        "/admin/zerotier/reconcile",
+        { method: "POST" }, true, requestConfig,
+      ),
+  },
 };
 
 // Organization types
@@ -1523,5 +1781,191 @@ export function create403Handler(toastFn: (options: { title: string; description
       description: "You don't have permission to view this section. Please contact your organization administrator.",
       variant: "destructive",
     });
+  };
+}
+
+// ── ZeroTier / Portal Network Types ──────────────────────────────────────────
+
+export type NetworkEnvironment = "production" | "staging" | "development" | "lab";
+export type NetworkRequestMode = "open" | "approval_required" | "invite_only";
+export type ApprovalGrantType = "requested" | "assigned";
+export type ApprovalState = "pending" | "approved" | "rejected" | "revoked" | "suspended";
+export type MembershipState =
+  | "pending_device_registration"
+  | "pending_request"
+  | "pending_manager_approval"
+  | "approved_inactive"
+  | "joined_deauthorized"
+  | "active_authorized"
+  | "activation_expired"
+  | "suspended"
+  | "revoked"
+  | "rejected";
+export type ActivationEndReason = "expired" | "logout" | "kill_switch" | "manual_revoke" | "approval_revoked" | "admin_action";
+export type KillSwitchScope = "organization" | "global" | "selected_networks";
+export type DeviceStatus = "active" | "inactive";
+
+export interface PortalNetwork {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  owner_user_id: string;
+  zerotier_network_id: string;
+  environment: NetworkEnvironment;
+  request_mode: NetworkRequestMode;
+  default_activation_lifetime_minutes: number;
+  max_activation_lifetime_minutes: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  approved_user_count?: number;
+  active_membership_count?: number;
+}
+
+export interface Device {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  node_id: string;
+  device_nickname: string | null;
+  hostname: string | null;
+  asset_tag: string | null;
+  serial_number: string | null;
+  status: DeviceStatus;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  display_name?: string;
+  active_membership_count?: number;
+}
+
+export interface UserNetworkApproval {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  portal_network_id: string;
+  granted_by_user_id: string | null;
+  grant_type: ApprovalGrantType;
+  state: ApprovalState;
+  justification: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  active_membership_count?: number;
+}
+
+export interface DeviceNetworkMembership {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  device_id: string;
+  portal_network_id: string;
+  user_network_approval_id: string | null;
+  state: MembershipState;
+  join_seen: boolean;
+  currently_authorized: boolean;
+  approved_for_activation: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  active_session: ActivationSession | null;
+}
+
+export interface EnrichedMembership {
+  id: string;
+  user_id: string;
+  user_email: string | null;
+  user_full_name: string | null;
+  device_id: string;
+  device_nickname: string | null;
+  device_hostname: string | null;
+  device_node_id: string | null;
+  device_status: DeviceStatus | null;
+  portal_network_id: string;
+  network_name: string | null;
+  network_environment: NetworkEnvironment | null;
+  state: MembershipState | null;
+  join_seen: boolean;
+  currently_authorized: boolean;
+  approved_for_activation: boolean;
+  user_network_approval_id: string | null;
+  approval_state: ApprovalState | null;
+  active_session: ActivationSession | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ActivationSession {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  device_network_membership_id: string;
+  authenticated_at: string;
+  expires_at: string;
+  ended_at: string | null;
+  end_reason: ActivationEndReason | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  is_expired: boolean;
+  is_active: boolean;
+}
+
+export interface KillSwitchEvent {
+  id: string;
+  organization_id: string;
+  target_user_id: string;
+  scope: KillSwitchScope;
+  triggered_by_user_id: string;
+  reason: string | null;
+  network_ids: string[] | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface ZeroTierMember {
+  id: string;
+  network_id: string;
+  node_id: string;
+  name: string | null;
+  description: string | null;
+  hidden: boolean;
+  is_authorized: boolean;
+  display_name: string;
+  ip_list: string;
+  last_online: number | null;
+  last_seen: number | null;
+  last_seen_str: string;
+  client_version: string | null;
+  controller_id: string | null;
+  config: {
+    authorized: boolean;
+    active_bridge: boolean;
+    ip_assignments: string[];
+    creation_time: number | null;
+    last_authorized_time: number | null;
+    last_deauthorized_time: number | null;
+    version_string: string;
+  };
+}
+
+export interface ZeroTierNetwork {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_id: string | null;
+  online_member_count: number;
+  authorized_member_count: number;
+  total_member_count: number;
+  config: {
+    name: string;
+    private: boolean;
+    creation_time: number | null;
+    ip_assignment_pools: Record<string, unknown>[];
+    routes: Record<string, unknown>[];
   };
 }

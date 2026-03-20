@@ -7,9 +7,17 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 // Layouts
 import PublicLayout from "@/components/layouts/PublicLayout";
 import ProtectedLayout from "@/components/layouts/ProtectedLayout";
+import MarketingLayout from "@/components/layouts/MarketingLayout";
+
+// Marketing pages
+import HomePage from "@/pages/marketing/HomePage";
+import FeaturesPage from "@/pages/marketing/FeaturesPage";
+import PricingPage from "@/pages/marketing/PricingPage";
+import SecurityPage from "@/pages/marketing/SecurityPage";
+import SSHCertificatesPage from "@/pages/marketing/SSHCertificatesPage";
+import DemoPage from "@/pages/marketing/DemoPage";
 
 // Public pages
-import Index from "@/pages/Index";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import VerifyEmailPage from "@/pages/auth/VerifyEmailPage";
@@ -24,7 +32,7 @@ import ActivatePage from "@/pages/auth/ActivatePage";
 
 // User pages
 import ProfilePage from "@/pages/user/ProfilePage";
-import SecurityPage from "@/pages/user/SecurityPage";
+import UserSecurityPage from "@/pages/user/SecurityPage";
 import LinkedAccountsPage from "@/pages/user/LinkedAccountsPage";
 import ActivityPage from "@/pages/user/ActivityPage";
 import SSHKeysPage from "@/pages/user/SSHKeysPage";
@@ -40,6 +48,9 @@ import CAsPage from "@/pages/org/CAsPage";
 import DepartmentsPage from "@/pages/org/DepartmentsPage";
 import PrincipalsPage from "@/pages/org/PrincipalsPage";
 import MyMembershipsPage from "@/pages/org/MyMembershipsPage";
+import NetworksPage from "@/pages/org/NetworksPage";
+import DevicesPage from "@/pages/org/DevicesPage";
+import AccessPage from "@/pages/org/AccessPage";
 import SystemAuditPage from "@/pages/admin/SystemAuditPage";
 import OAuthProvidersPage from "@/pages/admin/OAuthProvidersPage";
 import OrgSetupPage from "@/pages/auth/OrgSetupPage";
@@ -127,8 +138,15 @@ function AppRoutes() {
     <AuthProvider>
       <OrgProvider>
       <Routes>
-        {/* Index redirect */}
-        <Route path="/" element={<Index />} />
+        {/* Marketing pages */}
+        <Route element={<MarketingLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/security" element={<SecurityPage />} />
+          <Route path="/ssh-certificates" element={<SSHCertificatesPage />} />
+          <Route path="/demo" element={<DemoPage />} />
+        </Route>
 
         {/* Public routes */}
         <Route element={<PublicLayout />}>
@@ -160,6 +178,7 @@ function AppRoutes() {
           {/* Organization routes — org members: overview + own memberships only */}
           <Route path="/org" element={<RequireOrgMember><OrgOverviewPage /></RequireOrgMember>} />
           <Route path="/org/my-memberships" element={<RequireOrgMember><MyMembershipsPage /></RequireOrgMember>} />
+          <Route path="/org/zerotier/devices" element={<RequireOrgMember><DevicesPage /></RequireOrgMember>} />
 
           {/* Organization management routes — org admins/owners only */}
           <Route path="/org/members" element={<RequireAdmin><MembersPage /></RequireAdmin>} />
@@ -170,6 +189,8 @@ function AppRoutes() {
           <Route path="/org/audit" element={<RequireAdmin><OrgAuditPage /></RequireAdmin>} />
           <Route path="/org/clients" element={<RequireAdmin><OIDCClientsPage /></RequireAdmin>} />
           <Route path="/org/cas" element={<RequireAdmin><CAsPage /></RequireAdmin>} />
+          <Route path="/org/zerotier/networks" element={<RequireAdmin><NetworksPage /></RequireAdmin>} />
+          <Route path="/org/zerotier/access" element={<RequireAdmin><AccessPage /></RequireAdmin>} />
 
           {/* Admin routes — org admin/owner only */}
           <Route path="/admin/audit" element={<RequireAdmin><SystemAuditPage /></RequireAdmin>} />

@@ -14,6 +14,9 @@ import {
   Terminal,
   ShieldCheck,
   Key,
+  Network,
+  Monitor,
+  ShieldAlert,
 } from "lucide-react";
 import { GatehouseLogo } from "@/components/branding/GatehouseLogo";
 import { NavLink } from "@/components/NavLink";
@@ -45,6 +48,7 @@ const userNavItems = [
 const orgMemberNavItems = [
   { title: "Overview", url: "/org", icon: Building2 },
   { title: "My Memberships", url: "/org/my-memberships", icon: Layers },
+  { title: "ZeroTier Devices", url: "/org/zerotier/devices", icon: Monitor },
 ];
 
 // Visible to org admins/owners only (management)
@@ -54,6 +58,8 @@ const orgAdminNavItems = [
   { title: "Departments", url: "/org/departments", icon: Layers },
   { title: "Principals", url: "/org/principals", icon: GitBranch },
   { title: "Policies", url: "/org/policies", icon: Settings },
+  { title: "ZeroTier Networks", url: "/org/zerotier/networks", icon: Network },
+  { title: "ZeroTier Access", url: "/org/zerotier/access", icon: ShieldAlert },
 ];
 
 const adminNavItems = [
