@@ -17,6 +17,7 @@ import {
   Network,
   Monitor,
   ShieldAlert,
+  BookOpen,
 } from "lucide-react";
 import { SecuirdLogo } from "@/components/branding/SecuirdLogo";
 import { NavLink } from "@/components/NavLink";
@@ -42,6 +43,7 @@ const userNavItems = [
   { title: "SSH Keys", url: "/ssh-keys", icon: Terminal },
   { title: "Linked Accounts", url: "/linked-accounts", icon: Link2 },
   { title: "Activity", url: "/activity", icon: Activity },
+  { title: "CLI Guide", url: "/cli-guide", icon: BookOpen },
 ];
 
 // Visible to ALL org members
@@ -212,7 +214,7 @@ export function AppSidebar() {
       <SidebarFooter className="p-4 border-t border-sidebar-border">
         {!collapsed && (
           <div className="text-xs text-sidebar-muted">
-            v1.0.0 • Self-hosted
+            {import.meta.env.VITE_APP_VERSION ?? 'Secuird'}
           </div>
         )}
       </SidebarFooter>

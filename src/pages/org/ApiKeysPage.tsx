@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Plus, Copy, Trash2, Loader2, AlertCircle, CheckCircle, Eye, EyeOff, MoreHorizontal, Edit2, Check
+  Plus, Copy, Trash2, Loader2, AlertCircle, CheckCircle, MoreHorizontal, Edit2, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -201,186 +201,118 @@ export default function ApiKeysPage() {
 
   return (
     <div className="page-container">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground">API Keys</h1>
-        <p className="text-muted-foreground mt-2">
-          Manage API keys for external integrations and programmatic access to your organization.
-        </p>
-      </div>
-
-      {/* New key notification */}
-      {newSecret && (
-        <Card className="mb-6 border-success/50 bg-success/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-success">
-              <CheckCircle className="w-5 h-5" />
-              New API Key Created
-            </CardTitle>
-            <CardDescription>
-              Store this key securely. You won't be able to see it again.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Key Name</Label>
-              <p className="text-sm text-foreground mt-1">{newSecret.name}</p>
-            </div>
-            <div>
-              <Label className="flex items-center justify-between">
-                <span>API Key Value</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copy(newSecret.key)}
-                  className="h-auto p-0 text-xs"
-                >
-                  {copied ? (
-                    <span className="text-success flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Copied
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <Copy className="w-3 h-3" /> Copy
-                    </span>
-                  )}
-                </Button>
-              </Label>
-              <code className="block text-xs bg-muted p-2 rounded mt-1 break-all text-foreground">
-                {newSecret.key}
-              </code>
-            </div>
-            <Button
-              onClick={() => setNewSecret(null)}
-              variant="outline"
-              className="w-full"
-            >
-              Close
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Create button */}
-      <div className="mb-6 flex justify-end">
-        <Button
-          onClick={() => setIsCreateDialogOpen(true)}
-          className="gap-2"
-        >
+      <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="page-title">API Keys</h1>
+          <p className="page-description">Manage API keys for programmatic access to your organization.</p>
+        </div>
+        <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
           <Plus className="w-4 h-4" />
           Create API Key
         </Button>
       </div>
 
-      {/* Active Keys */}
-      {activeKeys.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold mb-3 text-foreground">Active Keys</h2>
-          <div className="space-y-2">
-            {activeKeys.map((key) => (
-              <Card key={key.id} className="hover:border-primary/50 transition-colors">
-                <CardContent className="py-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-foreground truncate">{key.name}</h3>
-                        {key.last_used_at && (
-                          <Badge variant="secondary" className="text-xs whitespace-nowrap">
-                            Last used: {formatDate(key.last_used_at)}
-                          </Badge>
-                        )}
-                      </div>
-                      {key.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {key.description}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Created {formatDate(key.created_at)}
-                      </p>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 shrink-0"
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleEditKey(key)}
-                          className="cursor-pointer"
-                        >
-                          <Edit2 className="w-4 h-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteKey(key.id)}
-                          className="text-destructive cursor-pointer"
-                          disabled={isDeletingKey}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      {/* New key reveal banner */}
+      {newSecret && (
+        <div className="mb-4 rounded-lg border border-green-500/40 bg-green-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-green-600 dark:text-green-400">
+            <CheckCircle className="w-4 h-4" />
+            API key created — copy it now, you won't see it again.
           </div>
-        </div>
-      )}
-
-      {/* Revoked Keys */}
-      {revokedKeys.length > 0 && (
-        <div className="mb-6 opacity-60">
-          <h2 className="text-lg font-semibold mb-3 text-foreground">Revoked Keys</h2>
-          <div className="space-y-2">
-            {revokedKeys.map((key) => (
-              <Card key={key.id} className="bg-muted/30">
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground line-through">
-                        {key.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Revoked {formatDate(key.revoked_at || '')}
-                        {key.revoke_reason && ` - ${key.revoke_reason}`}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {apiKeys.length === 0 && (
-        <Card className="border-dashed">
-          <CardContent className="py-12 text-center">
-            <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <h3 className="font-medium text-foreground mb-1">No API Keys</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Create your first API key to enable external integrations.
-            </p>
-            <Button
-              onClick={() => setIsCreateDialogOpen(true)}
-              variant="outline"
-              className="gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Create API Key
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs bg-muted px-3 py-2 rounded break-all font-mono">
+              {newSecret.key}
+            </code>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={() => copy(newSecret.key)}>
+              {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+          <button onClick={() => setNewSecret(null)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            Dismiss
+          </button>
+        </div>
       )}
+
+      {/* Key list */}
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
+            </div>
+          ) : apiKeys.length === 0 ? (
+            <div className="p-12 text-center">
+              <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-3 opacity-40" />
+              <p className="text-sm font-medium text-foreground mb-1">No API keys yet</p>
+              <p className="text-xs text-muted-foreground mb-4">Create one to enable external integrations.</p>
+              <Button variant="outline" size="sm" onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
+                <Plus className="w-4 h-4" /> Create API Key
+              </Button>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {activeKeys.map((key) => (
+                <div key={key.id} className="flex items-start gap-4 p-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm text-foreground">{key.name}</span>
+                      {key.last_used_at && (
+                        <Badge variant="secondary" className="text-xs">
+                          Last used {formatDate(key.last_used_at)}
+                        </Badge>
+                      )}
+                    </div>
+                    {key.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{key.description}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">Created {formatDate(key.created_at)}</p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEditKey(key)} className="cursor-pointer">
+                        <Edit2 className="w-4 h-4 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteKey(key.id)}
+                        className="text-destructive cursor-pointer"
+                        disabled={isDeletingKey}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))}
+
+              {revokedKeys.length > 0 && (
+                <>
+                  <div className="px-4 py-2 bg-muted/30">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Revoked</span>
+                  </div>
+                  {revokedKeys.map((key) => (
+                    <div key={key.id} className="flex items-center gap-4 px-4 py-3 opacity-50">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-muted-foreground line-through">{key.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Revoked {formatDate(key.revoked_at || '')}
+                          {key.revoke_reason && ` — ${key.revoke_reason}`}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Create Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>

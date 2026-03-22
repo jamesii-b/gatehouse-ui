@@ -144,7 +144,7 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
       <CardContent className="space-y-4">
         {/* Stats row — hidden for system CAs */}
         {!isSystem && (
-          <div className="grid grid-cols-4 gap-3 text-center">
+          <div className="grid grid-cols-3 gap-3 text-center">
             <div className="p-2 bg-muted rounded-lg">
               <p className="text-lg font-semibold">{ca.active_certs}</p>
               <p className="text-xs text-muted-foreground">Active certs</p>
@@ -157,10 +157,7 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
               <p className="text-lg font-semibold">{ca.default_cert_validity_hours}h</p>
               <p className="text-xs text-muted-foreground">Default validity</p>
             </div>
-            <div className="p-2 bg-muted rounded-lg">
-              <p className="text-lg font-semibold">{ca.next_serial_number ?? "—"}</p>
-              <p className="text-xs text-muted-foreground">Next serial</p>
-            </div>
+          
           </div>
         )}
 

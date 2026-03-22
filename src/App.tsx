@@ -36,6 +36,7 @@ import UserSecurityPage from "@/pages/user/SecurityPage";
 import LinkedAccountsPage from "@/pages/user/LinkedAccountsPage";
 import ActivityPage from "@/pages/user/ActivityPage";
 import SSHKeysPage from "@/pages/user/SSHKeysPage";
+import CLIGuidePage from "@/pages/user/CLIGuidePage";
 
 // Organization pages
 import OrgOverviewPage from "@/pages/org/OrgOverviewPage";
@@ -175,6 +176,7 @@ function AppRoutes() {
           <Route path="/linked-accounts" element={<LinkedAccountsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/ssh-keys" element={<SSHKeysPage />} />
+          <Route path="/cli-guide" element={<CLIGuidePage />} />
 
           {/* Organization routes — org members: overview + own memberships only */}
           <Route path="/org" element={<RequireOrgMember><OrgOverviewPage /></RequireOrgMember>} />

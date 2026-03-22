@@ -824,9 +824,6 @@ TrustedUserCAKeys /etc/ssh/trusted_user_ca`}
                     className="font-mono text-xs pr-10"
                     rows={6}
                   />
-                  <div className="absolute top-2 right-2">
-                    <CopyButton text={`echo '${challengeText}' > /tmp/challenge.txt\nssh-keygen -Y sign \\\n  -f ~/.ssh/id_ed25519 \\\n  -n file \\\n  /tmp/challenge.txt\ncat /tmp/challenge.txt.sig | base64 -w0`} />
-                  </div>
                 </div>
               </div>
 
